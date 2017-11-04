@@ -26,6 +26,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             self.wfile.write('{}\n'.format(json.dumps({'status': 'success'})).encode())
+        elif self.path == '/send':
+            self._respond_json({'result': 'queued'})
         else:
             self.send_error(404, 'Not found')
 
@@ -39,6 +41,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise ValueError('Invalid content length')
 
         return json.loads(self.rfile.read(content_length).decode())
+
+    def _respond_json(self, body, status=200):
+        self.send_response(status)
+        self.end_headers()
+        self.wfile.write('{}\n'.format(json.dumps(body)).encode())
 
 
 class MailQueueAppender(threading.Thread):
