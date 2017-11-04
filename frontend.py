@@ -6,6 +6,8 @@ import queue
 import socketserver
 import threading
 
+import mmglib
+
 incoming_queue = queue.Queue(10)
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -27,6 +29,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write('{}\n'.format(json.dumps({'status': 'success'})).encode())
         elif self.path == '/send':
+            incoming_queue.put(mmglib.Message())
             self._respond_json({'result': 'queued'})
         else:
             self.send_error(404, 'Not found')

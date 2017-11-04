@@ -8,6 +8,7 @@ VOLUME /mailq
 
 COPY \
     frontend.py \
+    mmglib.py \
     \
     /app/
 
