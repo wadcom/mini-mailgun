@@ -7,7 +7,9 @@ RUN mkdir /mailq
 VOLUME /mailq
 
 COPY \
+    entrypoint.py \
     frontend.py \
+    mailqueue.py \
     mmglib.py \
     \
     /app/
@@ -16,4 +18,4 @@ WORKDIR /app
 
 EXPOSE 5000
 
-ENTRYPOINT /app/frontend.py
+ENTRYPOINT ["/app/entrypoint.py"]
