@@ -5,10 +5,15 @@ import json
 import queue
 import socketserver
 import threading
+import unittest
+from unittest.mock import MagicMock
 
+import mailqueue
 import mmglib
 
+
 incoming_queue = queue.Queue(10)
+
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     pass
@@ -50,19 +55,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write('{}\n'.format(json.dumps(body)).encode())
 
+###################################################################################################
 
 class MailQueueAppender(threading.Thread):
-    def __init__(self):
+    def __init__(self, input_queue, output_queue):
         super(MailQueueAppender, self).__init__()
         self.daemon = True
+        self.input_queue = input_queue
+        self.mailqueue = output_queue
 
     def run(self):
         while True:
-            message = incoming_queue.get()
+            self._relay_one_message()
 
+    def _relay_one_message(self):
+        message = self.input_queue.get()
+        self.mailqueue.put(message)
+
+
+class TestMailQueueAppender(unittest.TestCase):
+    def test_happy_path(self):
+        input_queue = queue.Queue(1)
+        input_queue.put('something')
+
+        output_queue = mailqueue.MailQueue()
+        output_queue.put = MagicMock()
+
+        MailQueueAppender(input_queue, output_queue)._relay_one_message()
+
+        output_queue.put.assert_called_once()
+
+###################################################################################################
 
 def main():
-    mailq_appender = MailQueueAppender()
+    mailq_appender = MailQueueAppender(incoming_queue, mailqueue.MailQueue())
     server = ThreadedHTTPServer(('', 5000), Handler)
 
     mailq_appender.start()
