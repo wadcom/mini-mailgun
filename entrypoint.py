@@ -10,7 +10,8 @@ def main():
         subprocess.run(['/app/frontend.py'], check=True)
     elif args.mode == 'unittests':
         modules = [
-            'frontend'
+            'frontend',
+            'mailqueue'
         ]
         subprocess.run(['python3', '-m', 'unittest'] + modules, check=True)
     else:
