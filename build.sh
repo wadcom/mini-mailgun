@@ -1,3 +1,3 @@
 #! /bin/sh -e
 
-docker build -t mini-mailgun/mini-mailgun .
+docker build -t mini-mailgun/bundle .
