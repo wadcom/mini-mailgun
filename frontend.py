@@ -58,19 +58,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
 ###################################################################################################
 
 class MailQueueAppender(threading.Thread):
-    def __init__(self, input_queue, output_queue):
+    def __init__(self, input_queue, outq_factory):
         super(MailQueueAppender, self).__init__()
         self.daemon = True
-        self.input_queue = input_queue
-        self.mailqueue = output_queue
+
+        self._input_queue = input_queue
+
+        self._mailqueue = None
+        self._outq_factory = outq_factory
 
     def run(self):
         while True:
             self._relay_one_message()
 
     def _relay_one_message(self):
-        message = self.input_queue.get()
-        self.mailqueue.put(message)
+        if not self._mailqueue:
+            self._mailqueue = self._outq_factory()
+
+        message = self._input_queue.get()
+        self._mailqueue.put(message)
 
 
 class TestMailQueueAppender(unittest.TestCase):
@@ -78,22 +84,24 @@ class TestMailQueueAppender(unittest.TestCase):
         input_queue = queue.Queue(1)
         input_queue.put('something')
 
-        output_queue = mailqueue.MailQueue()
-        output_queue.put = MagicMock()
+        def outq_factory():
+            q = mailqueue.MailQueue()
+            q.put = MagicMock()
+            return q
 
-        MailQueueAppender(input_queue, output_queue)._relay_one_message()
+        appender = MailQueueAppender(input_queue, outq_factory)
+        appender._relay_one_message()
 
-        output_queue.put.assert_called_once()
+        appender._mailqueue.put.assert_called_once()
 
 ###################################################################################################
 
 def main():
-    mailq_appender = MailQueueAppender(incoming_queue, mailqueue.MailQueue())
+    mailq_appender = MailQueueAppender(incoming_queue, mailqueue.MailQueue)
     server = ThreadedHTTPServer(('', 5000), Handler)
 
     mailq_appender.start()
     server.serve_forever()
-
 
 
 if __name__ == '__main__':
