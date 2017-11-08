@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+from email.message import EmailMessage
 import http.server
 import json
 import queue
@@ -9,7 +10,6 @@ import unittest
 from unittest.mock import MagicMock
 
 import mailqueue
-import mmglib
 
 
 incoming_queue = queue.Queue(10)
@@ -34,7 +34,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write('{}\n'.format(json.dumps({'status': 'success'})).encode())
         elif self.path == '/send':
-            incoming_queue.put(mmglib.Message())
+            SendHandler(incoming_queue).run()
             self._respond_json({'result': 'queued'})
         else:
             self.send_error(404, 'Not found')
@@ -54,6 +54,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.end_headers()
         self.wfile.write('{}\n'.format(json.dumps(body)).encode())
+
+###################################################################################################
+
+class SendHandler():
+    def __init__(self, incoming_queue):
+        self._incoming_queue = incoming_queue
+
+    def run(self):
+        self._incoming_queue.put(EmailMessage())
+
+
+class TestSendHandler(unittest.TestCase):
+    def setUp(self):
+        self.q = queue.Queue(1)
+        self.handler = SendHandler(self.q)
+
+    def test_valid_request_should_place_message_to_incoming_queue(self):
+        self.q.put = MagicMock()
+
+        self.handler.run()
+
+        self.q.put.assert_called_once()
+
+    def test_request_should_construct_email_message(self):
+        self.handler.run()
+        self.assertEqual(str(EmailMessage()), str(self.q.get()))
+
 
 ###################################################################################################
 
@@ -93,6 +120,18 @@ class TestMailQueueAppender(unittest.TestCase):
         appender._relay_one_message()
 
         appender._mailqueue.put.assert_called_once()
+
+###################################################################################################
+
+def message_from_request_dict(request):
+    message = EmailMessage()
+    message['From'] = request['sender']
+    return message
+
+class TestMessageFromRequestDict(unittest.TestCase):
+    def test_dummy(self):
+        message = message_from_request_dict({'sender': 'someone'})
+        self.assertEqual('someone', message['From'])
 
 ###################################################################################################
 
