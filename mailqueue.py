@@ -1,4 +1,5 @@
 import email
+from email.message import EmailMessage
 import os
 import sqlite3
 import unittest
@@ -60,11 +61,11 @@ class MailQueue:
 
 class TestMailQueue(unittest.TestCase):
     def test_roundtrip(self):
-        message = 'something'
+        message = self._create_valid_email()
         mq = MailQueue(fresh=True)
         mq.put(message)
 
-        expected = Item(id=1, message_text=message)
+        expected = Item(id=1, message_text=message.as_string())
         self.assertItemsEqual(expected, mq.get())
 
     def test_empty_queue_should_return_none_on_get(self):
@@ -93,3 +94,11 @@ class TestMailQueue(unittest.TestCase):
     def assertItemsEqual(self, expected_item, actual_item):
         self.assertEqual(expected_item.id, actual_item.id)
         self.assertEqual(expected_item.message_text, actual_item.message_text)
+
+    def _create_valid_email(self):
+        message = EmailMessage()
+        message['From'] = 'me@example.com'
+        message['To'] = 'you@example.com'
+        message['Subject'] = 'valid email'
+        message.set_content('indeed!')
+        return message
