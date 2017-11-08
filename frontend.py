@@ -24,11 +24,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path == '/send':
             try:
                 body = self._get_json_body()
+                SendHandler(incoming_queue).run(body)
             except ValueError as e:
                 self.send_error(400, e.args[0])
                 return
 
-            SendHandler(incoming_queue).run(body)
             self._respond_json({'result': 'queued'})
         else:
             self.send_error(404, 'Not found')
@@ -189,5 +189,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
