@@ -21,20 +21,14 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
-        if self.path == '/logs':
+        if self.path == '/send':
             try:
                 body = self._get_json_body()
             except ValueError as e:
                 self.send_error(400, e.args[0])
                 return
 
-            incoming_queue.put(body)
-
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write('{}\n'.format(json.dumps({'status': 'success'})).encode())
-        elif self.path == '/send':
-            SendHandler(incoming_queue).run()
+            SendHandler(incoming_queue).run(body)
             self._respond_json({'result': 'queued'})
         else:
             self.send_error(404, 'Not found')
@@ -61,25 +55,37 @@ class SendHandler():
     def __init__(self, incoming_queue):
         self._incoming_queue = incoming_queue
 
-    def run(self):
-        self._incoming_queue.put(EmailMessage())
+    def run(self, request_dict):
+        message = EmailMessage()
+        message['From'] = request_dict['sender']
+        self._incoming_queue.put(message)
 
 
 class TestSendHandler(unittest.TestCase):
     def setUp(self):
         self.q = queue.Queue(1)
         self.handler = SendHandler(self.q)
+        self.valid_request_dict = {'sender': 'someone'}
 
     def test_valid_request_should_place_message_to_incoming_queue(self):
         self.q.put = MagicMock()
 
-        self.handler.run()
+        self.handler.run(self.valid_request_dict)
 
         self.q.put.assert_called_once()
 
-    def test_request_should_construct_email_message(self):
-        self.handler.run()
-        self.assertEqual(str(EmailMessage()), str(self.q.get()))
+    # TODO: test for invalid request dictionary (missing sender, recepients, body etc)
+
+    def test_message_should_contain_sender_address(self):
+        self.handler.run({'sender': 'zxc'})
+        expected = EmailMessage()
+        expected['From'] = 'zxc'
+
+        self.assertQueueHeadEquals(expected)
+
+    def assertQueueHeadEquals(self, expected):
+        actual = self.q.get()
+        self.assertEqual(str(expected), str(actual))
 
 
 ###################################################################################################
