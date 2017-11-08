@@ -127,8 +127,3 @@ This version of the system is primitive and can be improved in a number of ways.
  - Provide structured error responses for HTTP requests (use JSON instead of HTML)
  - Correctly handle multiple recipients in requests
  - Handle MIME-encoded messages (not just plain text)
-
-# TODO
-
-- address all TODOs
-- get actual sender, recipient and body from posted json
