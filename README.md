@@ -23,7 +23,7 @@ system.
 
 Once the image is built, you can run unit tests by running the image like this:
 
-    $ docker run --rm -it --entrypoint ./unittests.sh mini-mailgun/bundle
+    $ docker run --rm -it mini-mailgun/bundle
 
 # How To Run End-To-End Test
 

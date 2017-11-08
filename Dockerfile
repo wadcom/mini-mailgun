@@ -21,4 +21,4 @@ WORKDIR /app
 
 EXPOSE 5000
 
-ENTRYPOINT ["/app/entrypoint.py"]
+ENTRYPOINT /app/unittests.sh
