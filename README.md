@@ -54,6 +54,22 @@ To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containe
 
     $ docker-compose rm -fv
 
+# HTTP API
+
+The service expects an HTTP POST request at the `/send` endpoint. The body of the POST request
+should be a JSON object of the following structure:
+
+```
+{
+    "sender": "me@example.com",
+    "recipients": "alice@another.com, bob@third.com",
+    "subject": "important message",
+    "body": "hello!"
+}
+```
+
+The system responds with a `200` status code if the message has been queued successfully.
+
 # System Design
 
 Here's the overall system structure:
@@ -101,9 +117,9 @@ threads) or to batch multiple messages over the same SMTP connection.
 
 This version of the system is primitive and can be improved in a number of ways. Here are some:
 
+ - Properly validate input and provide useful diagnostics
  - Support a pool of backend SMTP servers
  - Provide the client with an API to query the status of the previously sent email
- - Properly validate input and provide useful diagnostics
  - Add logging
  - Handle scenarios where the backend SMTP server fails (retries with exponential backoff)
  - Handle scenarios where a particular email can't be delivered temporarily (schedule another
@@ -114,6 +130,5 @@ This version of the system is primitive and can be improved in a number of ways.
 
 # TODO
 
-- make code-review for all files
 - address all TODOs
 - get actual sender, recipient and body from posted json
