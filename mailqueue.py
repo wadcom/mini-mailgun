@@ -1,3 +1,4 @@
+import email
 import os
 import sqlite3
 import unittest
@@ -7,6 +8,9 @@ class Item:
         self._id = id
         self._message_text = message_text
 
+    def as_email(self):
+        return email.message_from_string(self._message_text)
+
     @property
     def id(self):
         return self._id
@@ -15,6 +19,14 @@ class Item:
     def message_text(self):
         return self._message_text
 
+
+class TestItem(unittest.TestCase):
+    def test_deserializing_should_produce_email_message(self):
+        item = Item(id=1, message_text='From: a\n\n')
+        message = item.as_email()
+        self.assertEqual('a', message['From'])
+
+###################################################################################################
 
 class MailQueue:
 
