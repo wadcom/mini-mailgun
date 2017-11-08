@@ -57,7 +57,14 @@ class SendHandler():
 
     def run(self, request_dict):
         message = EmailMessage()
-        message['From'] = request_dict['sender']
+        try:
+            message['From'] = request_dict['sender']
+            message['To'] = request_dict['recipients']
+            message['Subject'] = request_dict['subject']
+            message.set_content(request_dict['body'])
+        except KeyError as e:
+            raise ValueError('Missing request field "{}"'.format(e))
+
         self._incoming_queue.put(message)
 
 
@@ -65,27 +72,70 @@ class TestSendHandler(unittest.TestCase):
     def setUp(self):
         self.q = queue.Queue(1)
         self.handler = SendHandler(self.q)
-        self.valid_request_dict = {'sender': 'someone'}
+        self.valid_request_dict = {
+            'sender': 'someone',
+            'recipients': 'alice, bob',
+            'subject': 'important message',
+            'body': 'hello!'
+        }
 
     def test_valid_request_should_place_message_to_incoming_queue(self):
         self.q.put = MagicMock()
-
         self.handler.run(self.valid_request_dict)
-
         self.q.put.assert_called_once()
 
-    # TODO: test for invalid request dictionary (missing sender, recepients, body etc)
+    def test_missing_request_keys_should_not_affect_queue(self):
+        for k in self.valid_request_dict:
+            with self.subTest(field=k):
+                q = queue.Queue(1)
+                q.put = MagicMock()
+                handler = SendHandler(q)
 
-    def test_message_should_contain_sender_address(self):
-        self.handler.run({'sender': 'zxc'})
-        expected = EmailMessage()
-        expected['From'] = 'zxc'
+                r = dict(self.valid_request_dict)
+                del r[k]
 
-        self.assertQueueHeadEquals(expected)
+                with self.assertRaises(ValueError) as cm:
+                    handler.run(r)
 
-    def assertQueueHeadEquals(self, expected):
-        actual = self.q.get()
-        self.assertEqual(str(expected), str(actual))
+                self.assertTrue(k in cm.exception.args[0],
+                                msg='expected exception description "{}" to contain "{}"'.format(
+                                    cm.exception.args[0], k
+                                ))
+                q.put.assert_not_called()
+
+    def test_message_body_should_be_taken_from_request(self):
+        expected_body = 'this will be a body of the message'
+        r = dict(self.valid_request_dict)
+        r['body'] = expected_body
+
+        self.handler.run(r)
+
+        message = self._queue_pop()
+        self.assertEqual(expected_body + '\n', message.get_content())
+
+    def test_message_header_should_contain_values_from_request(self):
+        input_fields = {
+            'sender': 'From',
+            'recipients': 'To',
+            'subject': 'Subject'
+        }
+
+        test_value = 'value_used_by_test'
+
+        for input_field, message_field in input_fields.items():
+            with self.subTest(input_field=input_field, message_field=message_field):
+                r = dict(self.valid_request_dict)
+                r[input_field] = test_value
+
+                self.handler.run(r)
+
+                message = self._queue_pop()
+                self.assertEqual(test_value, message[message_field])
+
+    def _queue_pop(self):
+        self.assertFalse(self.q.empty(),
+                         msg='the queue is empty, expected it to contain at least one message')
+        return self.q.get()
 
 
 ###################################################################################################
@@ -126,18 +176,6 @@ class TestMailQueueAppender(unittest.TestCase):
         appender._relay_one_message()
 
         appender._mailqueue.put.assert_called_once()
-
-###################################################################################################
-
-def message_from_request_dict(request):
-    message = EmailMessage()
-    message['From'] = request['sender']
-    return message
-
-class TestMessageFromRequestDict(unittest.TestCase):
-    def test_dummy(self):
-        message = message_from_request_dict({'sender': 'someone'})
-        self.assertEqual('someone', message['From'])
 
 ###################################################################################################
 
