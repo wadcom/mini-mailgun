@@ -1,16 +1,19 @@
 FROM alpine:3.6
 
 RUN \
-    apk add --no-cache python3
+    apk add --no-cache python3 && \
+    pip3 install aiosmtpd
 
-RUN mkdir /mailq
-VOLUME /mailq
+RUN mkdir /mailq /logs
+VOLUME /logs /mailq
+
 
 COPY \
-    entrypoint.py \
     frontend.py \
     mailqueue.py \
-    mmglib.py \
+    sender.py \
+    smtpstub.py \
+    unittests.sh \
     \
     /app/
 
