@@ -1,6 +1,9 @@
+import collections
 import os
 import sqlite3
 import unittest
+
+Item = collections.namedtuple('Item', 'id message_text')
 
 class MailQueue:
 
@@ -14,27 +17,31 @@ class MailQueue:
         self._db_conn.row_factory = sqlite3.Row
         self._db_cursor = self._db_conn.cursor()
 
-        self._db_cursor.execute(
-            'CREATE TABLE IF NOT EXISTS messages (sender text, recipients text, body text)')
-        self._db_conn.commit()
+        self._execute_committing('CREATE TABLE IF NOT EXISTS messages (message text)')
 
     def get(self):
-        self._db_cursor.execute('SELECT * FROM messages LIMIT 1')
+        self._db_cursor.execute('SELECT rowid, * FROM messages LIMIT 1')
         row = self._db_cursor.fetchone()
-        return row['body'] if row else None
+        return Item(id=row['rowid'], message_text=row['message']) if row else None
+
+    def mark_as_sent(self, item):
+        self._execute_committing('DELETE FROM messages WHERE rowid=?', (item.id, ))
 
     def put(self, message):
-        self._db_cursor.execute('INSERT INTO messages VALUES (?, ?, ?)',
-                                ('XXX-sender', 'XXX-recipients', message))
-        self._db_conn.commit()
+        self._execute_committing('INSERT INTO messages VALUES (?)', (str(message),))
 
+    def _execute_committing(self, statement, *extra_args):
+        self._db_cursor.execute(statement, *extra_args)
+        self._db_conn.commit()
 
 class TestMailQueue(unittest.TestCase):
     def test_roundtrip(self):
         message = 'something'
-        mq = MailQueue()
+        mq = MailQueue(fresh=True)
         mq.put(message)
-        self.assertEqual(message, mq.get())
+
+        expected = Item(id=1, message_text=message)
+        self.assertEqual(expected, mq.get())
 
     def test_empty_queue_should_return_none_on_get(self):
         self.assertIsNone(MailQueue(fresh=True).get())
@@ -49,4 +56,12 @@ class TestMailQueue(unittest.TestCase):
         mq = MailQueue(fresh=True)
         mq.put(message)
 
-        self.assertEqual(message, MailQueue().get())
+        self.assertEqual(message, MailQueue().get().message_text)
+
+    def test_message_marked_as_sent_should_not_be_retrieved(self):
+        mq = MailQueue(fresh=True)
+        mq.put('something')
+        item = mq.get()
+        mq.mark_as_sent(item)
+
+        self.assertIsNone(mq.get())
