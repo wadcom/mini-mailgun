@@ -1,9 +1,20 @@
-import collections
 import os
 import sqlite3
 import unittest
 
-Item = collections.namedtuple('Item', 'id message_text')
+class Item:
+    def __init__(self, id, message_text):
+        self._id = id
+        self._message_text = message_text
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def message_text(self):
+        return self._message_text
+
 
 class MailQueue:
 
@@ -34,6 +45,7 @@ class MailQueue:
         self._db_cursor.execute(statement, *extra_args)
         self._db_conn.commit()
 
+
 class TestMailQueue(unittest.TestCase):
     def test_roundtrip(self):
         message = 'something'
@@ -41,7 +53,7 @@ class TestMailQueue(unittest.TestCase):
         mq.put(message)
 
         expected = Item(id=1, message_text=message)
-        self.assertEqual(expected, mq.get())
+        self.assertItemsEqual(expected, mq.get())
 
     def test_empty_queue_should_return_none_on_get(self):
         self.assertIsNone(MailQueue(fresh=True).get())
@@ -65,3 +77,7 @@ class TestMailQueue(unittest.TestCase):
         mq.mark_as_sent(item)
 
         self.assertIsNone(mq.get())
+
+    def assertItemsEqual(self, expected_item, actual_item):
+        self.assertEqual(expected_item.id, actual_item.id)
+        self.assertEqual(expected_item.message_text, actual_item.message_text)
