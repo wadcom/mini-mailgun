@@ -16,6 +16,7 @@ incoming_queue = queue.Queue(10)
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    "This server spawns a new thread for each incoming request"
     pass
 
 
@@ -148,6 +149,9 @@ class MailQueueAppender(threading.Thread):
         self._input_queue = input_queue
 
         self._mailqueue = None
+
+        # The queue object should be created in the same thread it's going to be used, so we
+        # remember the factory and instantiate the queue when the new thread is spawned.
         self._outq_factory = outq_factory
 
     def run(self):
@@ -164,6 +168,11 @@ class MailQueueAppender(threading.Thread):
 
 class TestMailQueueAppender(unittest.TestCase):
     def test_happy_path(self):
+        # Using the "Humble Object" pattern to test the logic which is executed in a separate
+        # thread in production code: http://xunitpatterns.com/Humble%20Object.html
+        #
+        # Therefore we have to be a little more invasive than usually (e.g. we are accessing a
+        # private method).
         input_queue = queue.Queue(1)
         input_queue.put('something')
 
