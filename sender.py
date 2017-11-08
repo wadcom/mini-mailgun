@@ -7,7 +7,8 @@ import mailqueue
 
 
 def main():
-    time.sleep(10)
+    # TODO: this is a prototype and should be reworked
+
     mq = mailqueue.MailQueue()
     while True:
         q_item = mq.get()
