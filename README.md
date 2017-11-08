@@ -4,11 +4,12 @@ This simple service accepts requests to send email (as JSON-formatted HTTP POST 
 relays them to an upstream SMTP server.
 
 Prerequisites:
- * UNIX-like OS (tested on macOS 10.12.6)
- * Docker with `docker-compose` supporting
+
+ - UNIX-like OS (tested on macOS 10.12.6)
+ - Docker with `docker-compose` supporting
  [version 3](https://docs.docker.com/compose/compose-file/) configuration files
- * curl
- * Shell
+ - curl
+ - Shell
 
 # How To Build
 
@@ -59,14 +60,12 @@ To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containe
 The service expects an HTTP POST request at the `/send` endpoint. The body of the POST request
 should be a JSON object of the following structure:
 
-```
-{
-    "sender": "me@example.com",
-    "recipients": "alice@another.com, bob@third.com",
-    "subject": "important message",
-    "body": "hello!"
-}
-```
+    {
+        "sender": "me@example.com",
+        "recipients": "alice@another.com, bob@third.com",
+        "subject": "important message",
+        "body": "hello!"
+    }
 
 The system responds with a `200` status code if the message has been queued successfully.
 
