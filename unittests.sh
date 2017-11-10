@@ -1,3 +1,3 @@
 #! /bin/sh -e
 
-python3 -m unittest discover -p '*.py'
+python3 -m unittest discover -p 'test_*.py'
