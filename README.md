@@ -8,7 +8,7 @@ Prerequisites:
  - UNIX-like OS (tested on macOS 10.12.6)
  - Docker with `docker-compose` supporting
  [version 3](https://docs.docker.com/compose/compose-file/) configuration files
- - curl
+ - Python 3
  - Shell
 
 # How To Build
@@ -47,9 +47,7 @@ Start up the system in the test harness:
 Once it's up and running (you should see a message similar to "`Attaching to e2etests_smtpstub_1,
 e2etests_sender_1, e2etests_frontend_1`"), run the test in another terminal window:
 
-    $ ./test.sh
-
-Exit code of this script indicates whether the test was successful.
+    $ ./e2e-test.py
 
 To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containers:
 
