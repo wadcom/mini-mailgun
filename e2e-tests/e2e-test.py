@@ -8,8 +8,8 @@ import urllib.request
 
 
 class Client:
-    def __init__(self, minimailgun_url):
-        self.minimailgun_url = minimailgun_url
+    # TODO: take it from an environment variable
+    MINIMAILGUN_URL = 'http://127.0.0.1:5080/send'
 
     def sends_email_from(self, sender):
         data = {
@@ -19,7 +19,7 @@ class Client:
             'body': 'the body of\n the message\n'
         }
 
-        request = urllib.request.Request(self.minimailgun_url, data=json.dumps(data).encode(),
+        request = urllib.request.Request(self.MINIMAILGUN_URL, data=json.dumps(data).encode(),
                                          headers={'Content-Type': 'application/json'})
         response = urllib.request.urlopen(request)
         assert response.getcode() == 200, \
@@ -44,8 +44,7 @@ class SMTPServer:
 
 class TestEndToEnd(unittest.TestCase):
     def test_sending_to_single_recipient(self):
-        # TODO: take it from an environment variable
-        client = Client('http://127.0.0.1:5080/send')
+        client = Client()
         smtp_server = SMTPServer()
 
         sender = self._make_unique_address()
