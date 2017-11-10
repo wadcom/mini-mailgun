@@ -75,6 +75,8 @@ Here's the high level system structure:
 
 ![system structure](images/system-structure.jpg)
 
+## Frontend
+
 The job of the frontend is to authenticate client requests, parse and validate input, represent
 incoming requests as internal entities and store them in the mail queue.
 
@@ -87,6 +89,19 @@ another lists `c@c.com`; both reference the original message).
 
 Each envelope (along with the message formed from the incoming request) will be delivered to its
 own SMTP server. Delivery attempts are tracked per envelope.
+
+## Sender
+
+Here's a rough sketch of the `sender` process design:
+
+![sender process](images/sender.jpg)
+
+The "Domain -> Destination Info" LRU cache keeps information about specific destination domain,
+which includes:
+ * list of MX records for the domain
+ * timestamp of the next refresh of MX records from DNS
+ * timestamp of the next possible delivery
+ * number of failures since last successful delivery (for exponential backoff)
 
 ## Entities
 
