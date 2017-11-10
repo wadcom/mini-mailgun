@@ -71,24 +71,47 @@ The system responds with a `200` status code if the message has been queued succ
 
 # System Design
 
-Here's the overall system structure:
+Here's the high level system structure:
 
 ![system structure](images/system-structure.jpg)
 
-## Assumptions
+The job of the frontend is to authenticate client requests, parse and validate input, represent
+incoming requests as internal entities and store them in the mail queue.
 
-In the real world a pool of SMTP servers would take care of queuing email, making decisions on next
-hop for delivery (e.g. by looking up an MX record or picking a preconfigured upstream SMTP server),
-attempting deliveries, bouncing undeliverable email and retrying deliveries after temporary
-failures.
+![frontend operations](images/frontend.jpg)
 
-There is no value in reimplementing this functionality when production-grade solutions exist.
-Therefore I assume that the point of the system being designed is to:
- * provide clients with an HTTP interface for sending email
- * persistently queue client requests for cases when backend SMTP server pool is not available
- * allow for scaling of HTTP frontends
- * allow for performance gains when delivering to backends (e.g. reuse TCP connections, parallel
- delivery etc)
+A single incoming request can include recipients of different domains (e.g. `b1@b.com`, `b2@b.com`
+and `c@c.com`) so the frontend groups them into envelopes. An envelope lists all recipients of the
+incoming request that belong to the same domain (e.g. one envelope lists `b1@b.com`, `b2@b.com`,
+another lists `c@c.com`; both reference the original message).
+
+Each envelope (along with the message formed from the incoming request) will be delivered to its
+own SMTP server. Delivery attempts are tracked per envelope.
+
+## Entities
+
+Here are the most noteworthy entities:
+
+![domain entities](images/entities.jpg)
+
+The attributes described below are tentative.
+
+Message
+ * id
+ * text (email text in `RFC822` format)
+ * customer_id (customer which submitted the message)
+
+Envelope
+ * id
+ * message_id (references the original message)
+ * recipient_list (email addresses of recipients within a single domain)
+ * next_attempt_timestamp (when to attempt/retry delivery)
+
+DeliveryAttempt
+ * envelope_id (references the envelope attempted for delivery)
+ * outcome ("permanent failure", "temporary failure", "success")
+ * timestamp
+
 
 ## Choices
 
