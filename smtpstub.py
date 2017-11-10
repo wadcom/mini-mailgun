@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+import os
 import threading
 import time
 import queue
@@ -31,12 +32,13 @@ class SMTPServer(threading.Thread):
 
 
 def main():
+    domain = os.environ.get('DOMAIN', 'unspecified.domain')
     log_queue = queue.Queue(10)
 
     server = SMTPServer(log_queue)
     server.start()
 
-    logfile = open('/logs/smtpstub.log', 'w')
+    logfile = open('/logs/{}-smtp.log'.format(domain), 'w')
     while True:
         log_item = log_queue.get()
         logfile.write(log_item.mail_from + '\n')
