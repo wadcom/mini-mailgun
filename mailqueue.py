@@ -35,7 +35,10 @@ class MailQueue:
 
     def __init__(self, fresh=False):
         if fresh:
-            os.remove(self.DB_FILE)
+            try:
+                os.remove(self.DB_FILE)
+            except FileNotFoundError:
+                pass
 
         self._db_conn = sqlite3.connect(self.DB_FILE)
         self._db_conn.row_factory = sqlite3.Row
