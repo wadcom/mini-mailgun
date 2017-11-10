@@ -1,6 +1,10 @@
+import collections
 import email
 import os
 import sqlite3
+
+
+Envelope = collections.namedtuple('Envelope', 'sender recipients destination_domain message')
 
 
 class Item:
@@ -45,8 +49,8 @@ class MailQueue:
     def mark_as_sent(self, item):
         self._execute_committing('DELETE FROM messages WHERE rowid=?', (item.id, ))
 
-    def put(self, message):
-        self._execute_committing('INSERT INTO messages VALUES (?)', (str(message),))
+    def put(self, envelope):
+        self._execute_committing('INSERT INTO messages VALUES (?)', (str(envelope.message),))
 
     def _execute_committing(self, statement, *extra_args):
         self._db_cursor.execute(statement, *extra_args)

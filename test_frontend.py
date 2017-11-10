@@ -19,10 +19,13 @@ class TestSendHandler(unittest.TestCase):
             'body': 'hello!'
         }
 
-    def test_valid_request_should_place_message_to_incoming_queue(self):
+    def test_valid_request_should_place_envelope_to_incoming_queue(self):
         self.q.put = MagicMock()
         self.handler.run(self.valid_request_dict)
-        self.q.put.assert_called_once()
+
+        self.assertTrue(isinstance(self._last_call_first_arg(self.q.put), mailqueue.Envelope),
+                        msg='expected Envelope, got {}'.format(
+                            self._last_call_first_arg(self.q.put).__class__.__name__))
 
     def test_missing_request_keys_should_not_affect_queue(self):
         for k in self.valid_request_dict:
@@ -50,8 +53,8 @@ class TestSendHandler(unittest.TestCase):
 
         self.handler.run(r)
 
-        message = self._queue_pop()
-        self.assertEqual(expected_body + '\n', message.get_content())
+        envelope = self._queue_pop()
+        self.assertEqual(expected_body + '\n', envelope.message.get_content())
 
     def test_message_header_should_contain_values_from_request(self):
         input_fields = {
@@ -69,8 +72,13 @@ class TestSendHandler(unittest.TestCase):
 
                 self.handler.run(r)
 
-                message = self._queue_pop()
-                self.assertEqual(test_value, message[message_field])
+                envelope = self._queue_pop()
+                self.assertEqual(test_value, envelope.message[message_field])
+
+    @staticmethod
+    def _last_call_first_arg(mock):
+        """Convenience method to return the first argument of the last call to the mock."""
+        return mock.call_args[0][0]
 
     def _queue_pop(self):
         self.assertFalse(self.q.empty(),

@@ -63,7 +63,8 @@ class SendHandler:
         except KeyError as e:
             raise ValueError('Missing request field "{}"'.format(e))
 
-        self._incoming_queue.put(message)
+        self._incoming_queue.put(mailqueue.Envelope(sender='XXX', recipients=[],
+                                                    destination_domain='XXX', message=message))
 
 
 class MailQueueAppender(threading.Thread):

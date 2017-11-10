@@ -1,7 +1,7 @@
 from email.message import EmailMessage
 import unittest
 
-from mailqueue import Item, MailQueue
+from mailqueue import Envelope, Item, MailQueue
 
 
 class TestItem(unittest.TestCase):
@@ -12,12 +12,18 @@ class TestItem(unittest.TestCase):
 
 
 class TestMailQueue(unittest.TestCase):
-    def test_roundtrip(self):
-        message = self._create_valid_email()
-        mq = MailQueue(fresh=True)
-        mq.put(message)
+    def setUp(self):
+        self.valid_envelope = Envelope('sender@address.com',
+                                       ['alice@target.domain', 'bob@target.domain'],
+                                       'target.domain',
+                                        self._create_valid_email()
+                                       )
 
-        expected = Item(id=1, message_text=message.as_string())
+    def test_roundtrip(self):
+        mq = MailQueue(fresh=True)
+        mq.put(self.valid_envelope)
+
+        expected = Item(id=1, message_text=self.valid_envelope.message.as_string())
         self.assertItemsEqual(expected, mq.get())
 
     def test_empty_queue_should_return_none_on_get(self):
@@ -25,19 +31,18 @@ class TestMailQueue(unittest.TestCase):
 
     def test_mailqueue_with_fresh_should_drop_database(self):
         mq = MailQueue(fresh=True)
-        mq.put('unused')
+        mq.put(self.valid_envelope)
         self.assertIsNone(MailQueue(fresh=True).get())
 
     def test_messages_should_be_persisted(self):
-        message = 'something'
         mq = MailQueue(fresh=True)
-        mq.put(message)
+        mq.put(self.valid_envelope)
 
-        self.assertEqual(message, MailQueue().get().message_text)
+        self.assertEqual(self.valid_envelope.message.as_string(), MailQueue().get().message_text)
 
     def test_message_marked_as_sent_should_not_be_retrieved(self):
         mq = MailQueue(fresh=True)
-        mq.put('something')
+        mq.put(self.valid_envelope)
         item = mq.get()
         mq.mark_as_sent(item)
 
