@@ -14,10 +14,18 @@ services:
     volumes:
       - '.:/mailq'
 
-  smtpstub:
+  smtp-a:
     image: mini-mailgun/bundle
     entrypoint: ./smtpstub.py
-    ports:
-      - "5025:5000"
+    environment:
+      DOMAIN: a.com
+    volumes:
+      - '.:/logs'
+
+  smtp-b:
+    image: mini-mailgun/bundle
+    entrypoint: ./smtpstub.py
+    environment:
+      DOMAIN: b.com
     volumes:
       - '.:/logs'
