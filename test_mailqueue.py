@@ -1,30 +1,21 @@
 from email.message import EmailMessage
 import unittest
 
-from mailqueue import Envelope, Item, MailQueue
-
-
-class TestItem(unittest.TestCase):
-    def test_deserializing_should_produce_email_message(self):
-        item = Item(id=1, message_text='From: a\n\n')
-        message = item.as_email()
-        self.assertEqual('a', message['From'])
+from mailqueue import Envelope, MailQueue
 
 
 class TestMailQueue(unittest.TestCase):
     def setUp(self):
-        self.valid_envelope = Envelope('sender@address.com',
-                                       ['alice@target.domain', 'bob@target.domain'],
-                                       'target.domain',
-                                        self._create_valid_email()
+        self.valid_envelope = Envelope(sender='sender@address.com',
+                                       recipients=['alice@target.domain', 'bob@target.domain'],
+                                       destination_domain='target.domain',
+                                       message=self._create_valid_email()
                                        )
 
     def test_roundtrip(self):
         mq = MailQueue(fresh=True)
         mq.put(self.valid_envelope)
-
-        expected = Item(id=1, message_text=self.valid_envelope.message.as_string())
-        self.assertItemsEqual(expected, mq.get())
+        self.assertEnvelopesEqual(self.valid_envelope, mq.get())
 
     def test_empty_queue_should_return_none_on_get(self):
         self.assertIsNone(MailQueue(fresh=True).get())
@@ -37,8 +28,7 @@ class TestMailQueue(unittest.TestCase):
     def test_messages_should_be_persisted(self):
         mq = MailQueue(fresh=True)
         mq.put(self.valid_envelope)
-
-        self.assertEqual(self.valid_envelope.message.as_string(), MailQueue().get().message_text)
+        self.assertEnvelopesEqual(self.valid_envelope, MailQueue().get())
 
     def test_message_marked_as_sent_should_not_be_retrieved(self):
         mq = MailQueue(fresh=True)
@@ -48,9 +38,11 @@ class TestMailQueue(unittest.TestCase):
 
         self.assertIsNone(mq.get())
 
-    def assertItemsEqual(self, expected_item, actual_item):
-        self.assertEqual(expected_item.id, actual_item.id)
-        self.assertEqual(expected_item.message_text, actual_item.message_text)
+    def assertEnvelopesEqual(self, expected, actual):
+        self.assertEqual(expected.sender, actual.sender)
+        self.assertEqual(expected.recipients, actual.recipients)
+        self.assertEqual(expected.destination_domain, actual.destination_domain)
+        self.assertEqual(str(expected.message), str(actual.message))
 
     @staticmethod
     def _create_valid_email():
