@@ -11,6 +11,8 @@ def main():
     delivery_agent = DeliveryAgent(mailqueue.MailQueue(), DNSResolverStub(), SMTPClient())
 
     while True:
+        # TODO: retrieve a batch of messages and group by destination domain to reuse SMTP sessions
+        # to the same MX
         if delivery_agent.deliver_single_envelope() == DeliveryAgent.IDLE:
             time.sleep(1)
 
