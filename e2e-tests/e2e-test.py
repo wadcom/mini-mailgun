@@ -49,23 +49,25 @@ class SMTPServer:
 
 
 class TestEndToEnd(unittest.TestCase):
-    def test_sending_to_single_recipient(self):
-        client = Client()
-        smtp_server = SMTPServer('a.com')
+    def setUp(self):
+        self.client = Client()
+        self.sender = self._make_unique_address()
+        self.smtp_a = SMTPServer('a.com')
+        self.smtp_b = SMTPServer('b.com')
 
-        sender = self._make_unique_address()
-        client.sends_email(sender, ['unused@a.com'])
-        smtp_server.receives_email_from(sender)
+    def test_sending_to_single_recipient(self):
+        self.client.sends_email(self.sender, ['unused@a.com'])
+        self.smtp_a.receives_email_from(self.sender)
 
     def test_delivering_to_different_smtp_servers(self):
-        client = Client()
-        smtp_a = SMTPServer('a.com')
-        smtp_b = SMTPServer('b.com')
+        self.client.sends_email(self.sender, ['a@a.com', 'b@b.com'])
+        self.smtp_a.receives_email_from(self.sender)
+        self.smtp_b.receives_email_from(self.sender)
 
-        sender = self._make_unique_address()
-        client.sends_email(sender, ['a@a.com', 'b@b.com'])
-        smtp_a.receives_email_from(sender)
-        smtp_b.receives_email_from(sender)
+    def test_partial_delivery(self):
+        self.client.sends_email(self.sender, ['a@a.com', 'undeliverable@aaa.com', 'b@b.com'])
+        self.smtp_a.receives_email_from(self.sender)
+        self.smtp_b.receives_email_from(self.sender)
 
     @staticmethod
     def _make_unique_address():
