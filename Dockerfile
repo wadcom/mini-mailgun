@@ -7,6 +7,9 @@ RUN \
 RUN mkdir /mailq /logs
 VOLUME /logs /mailq
 
+ENV PYTHONUNBUFFERED=TRUE
+
+WORKDIR /app
 
 COPY \
     frontend.py \
@@ -16,9 +19,8 @@ COPY \
     test_*.py \
     unittests.sh \
     \
-    /app/
+    ./
 
-WORKDIR /app
 
 EXPOSE 5000
 
