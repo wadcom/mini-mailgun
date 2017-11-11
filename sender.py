@@ -6,24 +6,56 @@ import time
 
 import mailqueue
 
-def main():
-    # TODO: this is a prototype and should be reworked
 
-    mq = mailqueue.MailQueue()
-    client = SMTPClient()
+def main():
+    delivery_agent = DeliveryAgent(mailqueue.MailQueue(), DNSResolverStub(), SMTPClient())
 
     while True:
-        envelope = mq.get()
-        if not envelope:
+        if delivery_agent.deliver_single_envelope() == DeliveryAgent.IDLE:
             time.sleep(1)
-            continue
 
-        smtp_hostname = get_mx_for_domain(envelope.destination_domain)
 
-        client.send(smtp_hostname, envelope)
+class DeliveryAgent:
+    IDLE = 'IDLE (there was no items in the incoming queue)'
+    DONE = 'DONE (there was at least one item to process)'
 
-        # TODO: handle errors
-        mq.mark_as_sent(envelope)
+    RETRY_INTERVAL = 600 # seconds
+
+    def __init__(self, mailqueue, dns_resolver, smtp_client):
+        self._dns_resolver = dns_resolver
+        self._mailqueue = mailqueue
+        self._smtp_client = smtp_client
+
+    def deliver_single_envelope(self):
+        envelope = self._mailqueue.get()
+
+        if not envelope:
+            return self.IDLE
+
+        try:
+            mx = self._dns_resolver.get_first_mx(envelope.destination_domain)
+        except TemporaryFailure:
+            self._mailqueue.schedule_retry_in(envelope, self.RETRY_INTERVAL)
+            return self.DONE
+
+        self._smtp_client.send(mx, envelope)
+        self._mailqueue.mark_as_sent(envelope)
+        return self.DONE
+
+
+class DNSResolverStub:
+    def __init__(self):
+        self._mx = {
+            'a.com': 'smtp-a',
+            'b.com': 'smtp-b',
+        }
+
+    def get_first_mx(self, domain):
+        try:
+            return self._mx[domain]
+        except KeyError:
+            raise TemporaryFailure("Can't resolve MX for '{}': unknown hostname".format(domain)) \
+                from None
 
 
 class SMTPClient:
@@ -43,11 +75,8 @@ class SMTPClient:
         server.quit()
 
 
-def get_mx_for_domain(domain):
-    return {
-        'a.com': 'smtp-a',
-        'b.com': 'smtp-b',
-    }[domain]
+class TemporaryFailure(Exception):
+    """Temporary failure, delivery should be retried"""
 
 
 if __name__ == '__main__':
