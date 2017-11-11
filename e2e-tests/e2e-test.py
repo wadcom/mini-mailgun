@@ -11,10 +11,10 @@ class Client:
     # TODO: take it from an environment variable
     MINIMAILGUN_URL = 'http://127.0.0.1:5080/send'
 
-    def sends_email_from(self, sender):
+    def sends_email(self, sender, recipients):
         data = {
             'sender': sender,
-            'recipients': 'unused@for.now',
+            'recipients': recipients,
             'subject': 'end-to-end test',
             'body': 'the body of\n the message\n'
         }
@@ -29,15 +29,21 @@ class Client:
 class SMTPServer:
     TIMEOUT = 5
 
+    def __init__(self, domain):
+        self.domain = domain
+
     def receives_email_from(self, sender):
         started_at = time.time()
         while True:
-            with open('smtpstub.log') as logfile:
+            with open(self.domain + '-smtp.log') as logfile:
                 if (sender + '\n') in logfile.readlines():
                     return
 
             assert (time.time() - started_at) <= self.TIMEOUT, \
-                "Message from '{}' wasn't received within {} seconds".format(sender, self.TIMEOUT)
+                "Message from '{}' wasn't received within {} seconds by '{}'".format(sender,
+                                                                                     self.TIMEOUT,
+                                                                                     self.domain
+                                                                                     )
 
             time.sleep(0.1)
 
@@ -45,11 +51,21 @@ class SMTPServer:
 class TestEndToEnd(unittest.TestCase):
     def test_sending_to_single_recipient(self):
         client = Client()
-        smtp_server = SMTPServer()
+        smtp_server = SMTPServer('a.com')
 
         sender = self._make_unique_address()
-        client.sends_email_from(sender)
+        client.sends_email(sender, ['unused@a.com'])
         smtp_server.receives_email_from(sender)
+
+    def test_delivering_to_different_smtp_servers(self):
+        client = Client()
+        smtp_a = SMTPServer('a.com')
+        smtp_b = SMTPServer('b.com')
+
+        sender = self._make_unique_address()
+        client.sends_email(sender, ['a@a.com', 'b@b.com'])
+        smtp_a.receives_email_from(sender)
+        smtp_b.receives_email_from(sender)
 
     @staticmethod
     def _make_unique_address():
