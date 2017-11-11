@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+import collections
 from email.message import EmailMessage
 import http.server
 import json
@@ -54,6 +55,23 @@ class SendHandler:
         self._incoming_queue = incoming_queue
 
     def run(self, request_dict):
+        message = self._make_message(request_dict)
+        envelopes = self._make_envelopes(message, request_dict['recipients'])
+
+        for e in envelopes:
+            self._incoming_queue.put(e)
+
+    def _make_envelopes(self, message, recipients):
+        domain_to_recipients = collections.defaultdict(list)
+        for r in recipients:
+            _, domain = r.split('@')
+            domain_to_recipients[domain].append(r)
+
+        return (mailqueue.Envelope(sender='XXX', recipients=r, destination_domain=d,
+                                   message=message)
+                for d, r in domain_to_recipients.items())
+
+    def _make_message(self, request_dict):
         message = EmailMessage()
         try:
             message['From'] = request_dict['sender']
@@ -63,8 +81,7 @@ class SendHandler:
         except KeyError as e:
             raise ValueError('Missing request field "{}"'.format(e))
 
-        self._incoming_queue.put(mailqueue.Envelope(sender='XXX', recipients=[],
-                                                    destination_domain='XXX', message=message))
+        return message
 
 
 class MailQueueAppender(threading.Thread):
