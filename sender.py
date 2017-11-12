@@ -1,16 +1,19 @@
 #! /usr/bin/env python3
 
 import logging
+import os
 import smtplib
 import socket
 import time
+
+import dns.resolver
 
 import mailqueue
 
 def main():
     setup_logging()
 
-    delivery_agent = DeliveryAgent(mailqueue.MailQueue(), DNSResolverStub(), SMTPClient())
+    delivery_agent = DeliveryAgent(mailqueue.MailQueue(), get_dns_resolver(), SMTPClient())
 
     while True:
         # TODO: retrieve a batch of messages and group by destination domain to reuse SMTP sessions
@@ -59,27 +62,16 @@ class DeliveryAgent:
         self._mailqueue.mark_as_sent(envelope)
         return self.DONE
 
-
-class DNSResolverStub:
-    def __init__(self):
-        self._mx = {
-            'a.com': 'smtp-a',
-            'b.com': 'smtp-b',
-        }
-
-    def get_first_mx(self, domain):
-        try:
-            return self._mx[domain]
-        except KeyError:
-            raise TemporaryFailure("Can't resolve MX for '{}': unknown hostname".format(domain)) \
-                from None
-
-
 class SMTPClient:
+    def __init__(self):
+        self._smtp_port = int(os.environ.get('SMTP_PORT', '25'))
+
     def send(self, smtp_hostname, envelope):
+        logging.debug('Envelope {}: establishing SMTP connection to {}:{}'.format(envelope.id,
+                                                                                  smtp_hostname,
+                                                                                  self._smtp_port))
         try:
-            # TODO: take port from configuration
-            server = smtplib.SMTP(host=smtp_hostname, port=5000)
+            server = smtplib.SMTP(host=smtp_hostname, port=self._smtp_port)
         except socket.gaierror:
             import sys
             # TODO: log it properly
@@ -94,6 +86,36 @@ class SMTPClient:
 
 class TemporaryFailure(Exception):
     """Temporary failure, delivery should be retried"""
+
+
+def get_dns_resolver():
+    static_mx_config = os.environ.get('STATIC_MX_CONFIG')
+    if static_mx_config:
+        logging.info('Using static MX configuration: {}'.format(static_mx_config))
+        return DNSResolverStub({
+            k: v for k, v in [entry.split(':') for entry in static_mx_config.split(',')]
+        })
+    else:
+        return DNSResolver()
+
+class DNSResolverStub:
+    def __init__(self, domain_to_mx_dict):
+        self._mx = domain_to_mx_dict
+
+    def get_first_mx(self, domain):
+        try:
+            return self._mx[domain]
+        except KeyError:
+            raise TemporaryFailure("Can't resolve MX for '{}': unknown hostname".format(domain)) \
+                from None
+
+
+class DNSResolver:
+    def get_first_mx(self, domain):
+        mx_records = sorted((r.preference, r.exchange.to_text(omit_final_dot=True))
+                            for r in dns.resolver.query(domain, 'MX'))
+        # TODO: handle no MX records
+        return mx_records[0][1]
 
 
 def setup_logging():
