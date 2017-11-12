@@ -62,6 +62,7 @@ class SendHandler:
 
         return {'result': 'queued'}
 
+    @staticmethod
     def _make_envelopes(self, message, recipients):
         domain_to_recipients = collections.defaultdict(list)
         for r in recipients:
@@ -72,7 +73,8 @@ class SendHandler:
                                    message=message)
                 for d, r in domain_to_recipients.items())
 
-    def _make_message(self, request_dict):
+    @staticmethod
+    def _make_message(request_dict):
         message = EmailMessage()
         try:
             message['From'] = request_dict['sender']
