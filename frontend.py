@@ -4,14 +4,12 @@ import collections
 from email.message import EmailMessage
 import http.server
 import json
-import queue
 import socketserver
-import threading
 
 import mailqueue
 
 
-incoming_queue = queue.Queue(10)
+mq_manager = mailqueue.Manager()
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -29,7 +27,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_post_with(self, handler_class):
         try:
             body = self._get_json_body()
-            response_data = handler_class(incoming_queue).run(body)
+            response_data = handler_class(mq_manager).run(body)
             self._respond_json(response_data)
         except ValueError as e:
             self.send_error(400, e.args[0])
@@ -52,15 +50,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 class SendHandler:
-    def __init__(self, incoming_queue):
-        self._incoming_queue = incoming_queue
+    def __init__(self, mail_queue):
+        self._mail_queue = mail_queue
 
     def run(self, request_dict):
         message = self._make_message(request_dict)
         envelopes = self._make_envelopes(message, request_dict['recipients'])
 
         for e in envelopes:
-            self._incoming_queue.put(e)
+            self._mail_queue.put(e)
 
         return {'result': 'queued'}
 
@@ -87,36 +85,10 @@ class SendHandler:
         return message
 
 
-class MailQueueAppender(threading.Thread):
-    def __init__(self, input_queue, outq_factory):
-        super(MailQueueAppender, self).__init__()
-        self.daemon = True
-
-        self._input_queue = input_queue
-
-        self._mailqueue = None
-
-        # The queue object should be created in the same thread it's going to be used, so we
-        # remember the factory and instantiate the queue when the new thread is spawned.
-        self._outq_factory = outq_factory
-
-    def run(self):
-        while True:
-            self._relay_one_message()
-
-    def _relay_one_message(self):
-        if not self._mailqueue:
-            self._mailqueue = self._outq_factory()
-
-        message = self._input_queue.get()
-        self._mailqueue.put(message)
-
-
 def main():
-    mailq_appender = MailQueueAppender(incoming_queue, mailqueue.MailQueue)
     server = ThreadedHTTPServer(('', 5000), Handler)
 
-    mailq_appender.start()
+    mq_manager.start()
     server.serve_forever()
 
 
