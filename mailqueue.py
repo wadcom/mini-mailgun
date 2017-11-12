@@ -64,17 +64,18 @@ class MailQueue:
 
     def put(self, envelope):
         self._execute_committing(
-            'INSERT INTO envelopes (sender, recipients, destination_domain, message) '
-            'VALUES (?, ?, ?, ?)',
+            'INSERT INTO envelopes '
+            '(sender, recipients, destination_domain, message, next_attempt_at) '
+            'VALUES (?, ?, ?, ?, ?)',
             (envelope.sender, ','.join(envelope.recipients), envelope.destination_domain,
-             str(envelope.message))
+             str(envelope.message), self.clock.time())
         )
 
     def schedule_retry_in(self, envelope, retry_after):
         self._assert_envelope_has_id(envelope)
         self._execute_committing(
             "UPDATE envelopes SET next_attempt_at=? WHERE rowid=?",
-            (envelope.next_attempt_at + retry_after, envelope.id)
+            (self.clock.time() + retry_after, envelope.id)
         )
 
     @staticmethod
