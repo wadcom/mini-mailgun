@@ -18,6 +18,9 @@ class TestSendHandler(unittest.TestCase):
             'body': 'hello!'
         }
 
+    def test_successful_run_should_return_correct_response(self):
+        self.assertEqual({'result': 'queued'}, self.handler.run(self.valid_request_dict))
+
     def test_valid_request_should_place_envelope_to_incoming_queue(self):
         self.q.put = MagicMock()
         self.handler.run(self.valid_request_dict)

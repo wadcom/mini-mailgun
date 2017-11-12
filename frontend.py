@@ -22,16 +22,17 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/send':
-            try:
-                body = self._get_json_body()
-                SendHandler(incoming_queue).run(body)
-            except ValueError as e:
-                self.send_error(400, e.args[0])
-                return
-
-            self._respond_json({'result': 'queued'})
+            self._handle_post_with(SendHandler)
         else:
             self.send_error(404, 'Not found')
+
+    def _handle_post_with(self, handler_class):
+        try:
+            body = self._get_json_body()
+            response_data = handler_class(incoming_queue).run(body)
+            self._respond_json(response_data)
+        except ValueError as e:
+            self.send_error(400, e.args[0])
 
     def _get_json_body(self):
         if self.headers['Content-Type'] != 'application/json':
@@ -60,6 +61,8 @@ class SendHandler:
 
         for e in envelopes:
             self._incoming_queue.put(e)
+
+        return {'result': 'queued'}
 
     def _make_envelopes(self, message, recipients):
         domain_to_recipients = collections.defaultdict(list)
