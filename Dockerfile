@@ -16,6 +16,7 @@ COPY \
     mailqueue.py \
     sender.py \
     smtpstub.py \
+    testhelpers.py \
     test_*.py \
     unittests.sh \
     \

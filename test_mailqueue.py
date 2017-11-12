@@ -1,8 +1,8 @@
-from email.message import EmailMessage
 import time
 import unittest
 
-from mailqueue import Envelope, MailQueue
+from mailqueue import MailQueue
+import testhelpers
 
 
 class TestMailQueue(unittest.TestCase):
@@ -18,11 +18,7 @@ class TestMailQueue(unittest.TestCase):
 
     def setUp(self):
         self.mq = MailQueue(fresh=True)
-        self.valid_envelope = Envelope(sender='sender@address.com',
-                                       recipients=['alice@target.domain', 'bob@target.domain'],
-                                       destination_domain='target.domain',
-                                       message=self._create_valid_email()
-                                       )
+        self.valid_envelope = testhelpers.make_valid_envelope()
 
     def test_roundtrip(self):
         self.mq.clock = self.FakeClock(123)
@@ -85,15 +81,6 @@ class TestMailQueue(unittest.TestCase):
         self.assertEqual(expected.recipients, actual.recipients)
         self.assertEqual(expected.destination_domain, actual.destination_domain)
         self.assertEqual(str(expected.message), str(actual.message))
-
-    @staticmethod
-    def _create_valid_email():
-        message = EmailMessage()
-        message['From'] = 'me@example.com'
-        message['To'] = 'you@example.com'
-        message['Subject'] = 'valid email'
-        message.set_content('indeed!')
-        return message
 
     def _put_and_get_envelope(self):
         self.mq.put(self.valid_envelope)
