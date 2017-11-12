@@ -1,13 +1,15 @@
 #! /usr/bin/env python3
 
+import logging
 import smtplib
 import socket
 import time
 
 import mailqueue
 
-
 def main():
+    setup_logging()
+
     delivery_agent = DeliveryAgent(mailqueue.MailQueue(), DNSResolverStub(), SMTPClient())
 
     while True:
@@ -34,13 +36,26 @@ class DeliveryAgent:
         if not envelope:
             return self.IDLE
 
+        logging.info('Took envelope {} for delivery (domain={})'.format(
+            envelope.id, envelope.destination_domain))
+
         try:
             mx = self._dns_resolver.get_first_mx(envelope.destination_domain)
-        except TemporaryFailure:
+            logging.debug('Envelope {}: MX for {} is {}'.format(envelope.id,
+                                                                envelope.destination_domain,
+                                                                mx))
+        except TemporaryFailure as e:
+            logging.warning(
+                'Envelope {}: temporary failure ({}), scheduling to retry in {} seconds'.format(
+                    envelope.id, e, self.RETRY_INTERVAL
+            ))
+
             self._mailqueue.schedule_retry_in(envelope, self.RETRY_INTERVAL)
             return self.DONE
 
         self._smtp_client.send(mx, envelope)
+        logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id, mx))
+
         self._mailqueue.mark_as_sent(envelope)
         return self.DONE
 
@@ -79,6 +94,13 @@ class SMTPClient:
 
 class TemporaryFailure(Exception):
     """Temporary failure, delivery should be retried"""
+
+
+def setup_logging():
+    logging.basicConfig(format='%(asctime)s %(levelname)s %(filename)s %(message)s',
+                        datefmt='%x %X',
+                        level=logging.DEBUG)
+    logging.info('Starting up...')
 
 
 if __name__ == '__main__':
