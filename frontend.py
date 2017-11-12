@@ -63,7 +63,7 @@ class SendHandler:
         return {'result': 'queued'}
 
     @staticmethod
-    def _make_envelopes(self, message, recipients):
+    def _make_envelopes(message, recipients):
         domain_to_recipients = collections.defaultdict(list)
         for r in recipients:
             _, domain = r.split('@')
