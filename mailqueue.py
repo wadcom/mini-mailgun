@@ -1,6 +1,8 @@
 import email
 import os
+import queue
 import sqlite3
+import threading
 import time
 
 
@@ -86,3 +88,30 @@ class MailQueue:
         self._db_cursor.execute(statement, *extra_args)
         self._db_conn.commit()
 
+
+class Manager:
+    """A proxy synchronizing access to MailQueue from multiple threads.
+
+    SQLite requires that the thread creating the database object is
+    the only one using it. This manager synchronizes access to methods
+    of MailQueue via blocking queues.
+    """
+
+    def __init__(self, **kwargs):
+        self._mail_queue_args = kwargs
+        self._manager_thread = threading.Thread(target=self._main_loop)
+        self._requests = queue.Queue(1)
+        self._responses = queue.Queue(1)
+
+    def put(self, *args):
+        self._requests.put(('put', args))
+        return self._responses.get()
+
+    def start(self):
+        self._manager_thread.start()
+
+    def _main_loop(self):
+        mq = MailQueue(**self._mail_queue_args)
+        while True:
+            method, args = self._requests.get()
+            self._responses.put(getattr(mq, method)(*args))
