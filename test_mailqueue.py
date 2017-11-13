@@ -1,7 +1,7 @@
 import time
 import unittest
 
-from mailqueue import MailQueue
+import mailqueue
 import testhelpers
 
 
@@ -17,7 +17,7 @@ class TestMailQueue(unittest.TestCase):
             return self._now
 
     def setUp(self):
-        self.mq = MailQueue(fresh=True)
+        self.mq = mailqueue.MailQueue(fresh=True)
         self.valid_envelope = testhelpers.make_valid_envelope()
 
     def test_roundtrip(self):
@@ -26,17 +26,18 @@ class TestMailQueue(unittest.TestCase):
         e = self.mq.get()
         self.assertEnvelopesEqual(self.valid_envelope, e)
         self.assertEqual(123, e.next_attempt_at)
+        self.assertEqual(mailqueue.Status.QUEUED, e.status)
 
     def test_empty_queue_should_return_none_on_get(self):
         self.assertIsNone(self.mq.get())
 
     def test_mailqueue_with_fresh_should_drop_database(self):
         self.mq.put(self.valid_envelope)
-        self.assertIsNone(MailQueue(fresh=True).get())
+        self.assertIsNone(mailqueue.MailQueue(fresh=True).get())
 
     def test_messages_should_be_persisted(self):
         self.mq.put(self.valid_envelope)
-        self.assertEnvelopesEqual(self.valid_envelope, MailQueue().get())
+        self.assertEnvelopesEqual(self.valid_envelope, mailqueue.MailQueue().get())
 
     def test_message_marked_as_sent_should_not_be_retrieved(self):
         item = self._put_and_get_envelope()
@@ -71,6 +72,14 @@ class TestMailQueue(unittest.TestCase):
         self.mq.clock.set(205)
         self.assertIsNone(self.mq.get())
 
+    def test_missing_submission_should_return_none_for_status(self):
+        self.assertIsNone(self.mq.get_status(1))
+
+    def test_single_envelope_status_should_be_returned(self):
+        e = self.valid_envelope
+        self.mq.put(e)
+        self.assertEqual(mailqueue.Status.QUEUED, self.mq.get_status(e.submission_id))
+
     # TODO increment number of retries
 
     def assertEnvelopesEqual(self, expected, actual):
@@ -81,6 +90,7 @@ class TestMailQueue(unittest.TestCase):
         self.assertEqual(expected.recipients, actual.recipients)
         self.assertEqual(expected.destination_domain, actual.destination_domain)
         self.assertEqual(str(expected.message), str(actual.message))
+        self.assertEqual(expected.submission_id, actual.submission_id)
 
     def _put_and_get_envelope(self):
         self.mq.put(self.valid_envelope)

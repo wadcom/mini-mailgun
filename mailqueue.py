@@ -6,6 +6,10 @@ import threading
 import time
 
 
+class Status:
+    QUEUED = 'queued'
+
+
 class Envelope:
     def __init__(self, **kwargs):
         self.id = None
@@ -33,13 +37,19 @@ class MailQueue:
         self._db_conn.row_factory = sqlite3.Row
         self._db_cursor = self._db_conn.cursor()
 
+        status_column = "status TEXT CHECK({}) NOT NULL, ".format(' or '.join(
+            'status="{}"'.format(v) for k, v in Status.__dict__.items() if not k.startswith('_'))
+        )
+
         self._execute_committing(
             "CREATE TABLE IF NOT EXISTS envelopes ("
-            "sender TEXT, "
-            "recipients TEXT, "
-            "destination_domain TEXT, "
-            "message TEXT, "
-            "next_attempt_at INTEGER DEFAULT (strftime('%s', CURRENT_TIMESTAMP))"
+            "sender TEXT NOT NULL, "
+            "recipients TEXT NOT NULL, "
+            "destination_domain TEXT NOT NULL, "
+            "message TEXT NOT NULL, "
+            "next_attempt_at INTEGER NOT NULL, "
+            + status_column +
+            "submission_id TEXT NOT NULL"
             ")"
         )
 
@@ -55,22 +65,46 @@ class MailQueue:
             return None
 
         # TODO: test parsing recipients
-        return Envelope(sender=row['sender'], recipients=row['recipients'].split(','),
-                        destination_domain=row['destination_domain'],
-                        message=email.message_from_string(row['message']), id=row['rowid'],
-                        next_attempt_at=int(row['next_attempt_at']))
+        as_is = lambda x: x
+        column_transformations = {
+            'destination_domain': as_is,
+            'message': email.message_from_string,
+            'next_attempt_at': int,
+            'recipients': lambda x: x.split(','),
+            'sender': as_is,
+            'status': as_is,
+            'submission_id': as_is
+        }
+
+        return Envelope(id=row['rowid'],
+                        **{k: f(row[k]) for k, f in column_transformations.items()})
+
+
+    def get_status(self, submission_id):
+        self._db_cursor.execute(
+            "SELECT rowid, * FROM envelopes WHERE submission_id=?", (submission_id,)
+        )
+
+        rows = self._db_cursor.fetchall()
+        if not rows:
+            return None
+
+        # XXX
+        return rows[0]['status']
 
     def mark_as_sent(self, envelope):
         self._assert_envelope_has_id(envelope)
         self._execute_committing('DELETE FROM envelopes WHERE rowid=?', (envelope.id, ))
 
+    # TODO: split it into domain-specific methods, e.g. put_new_envelope() etc
     def put(self, envelope):
         self._execute_committing(
             'INSERT INTO envelopes '
-            '(sender, recipients, destination_domain, message, next_attempt_at) '
-            'VALUES (?, ?, ?, ?, ?)',
+            '(sender, recipients, destination_domain, message, next_attempt_at, submission_id, '
+            'status) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?)',
             (envelope.sender, ','.join(envelope.recipients), envelope.destination_domain,
-             str(envelope.message), self.clock.time())
+             str(envelope.message), self.clock.time(), envelope.submission_id, envelope.status)
         )
 
     def schedule_retry_in(self, envelope, retry_after):
@@ -102,6 +136,10 @@ class Manager:
         self._manager_thread = threading.Thread(target=self._main_loop)
         self._requests = queue.Queue(1)
         self._responses = queue.Queue(1)
+
+    def get_status(self, *args):
+        self._requests.put(('get_status', args))
+        return self._responses.get()
 
     def put(self, *args):
         self._requests.put(('put', args))
