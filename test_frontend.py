@@ -135,7 +135,7 @@ class TestStatusHandler(unittest.TestCase):
         status = 'opaque status value from mail queue'
 
         submission_id = self.mq.put(testhelpers.make_valid_envelope())
-        self.mq.get_status = MagicMock(return_value=status)
+        self.mq.get_status = MagicMock(return_value=[(1, status)])
 
         result = self._get_submission_status(submission_id)
 
@@ -150,7 +150,17 @@ class TestStatusHandler(unittest.TestCase):
         self.assertIn('submission_id', cm.exception.args[0])
         self.mq.get_status.assert_not_called()
 
-    def _get_submission_status(self, submission_id):
+    def test_same_statuses_should_be_aggregated_as_such(self):
+        self.mq.get_status = MagicMock(return_value=[(1, 'x'), (2, 'x')])
+        result = self._get_submission_status()
+        self.assertEqual('x', result['status'])
+
+    def test_different_statuses_should_default_to_queued(self):
+        self.mq.get_status = MagicMock(return_value=[(1, 'x'), (2, 'y')])
+        result = self._get_submission_status()
+        self.assertEqual(mailqueue.Status.QUEUED, result['status'])
+
+    def _get_submission_status(self, submission_id=123):
         return self.handler.run({'submission_id': submission_id})
 
 

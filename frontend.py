@@ -104,9 +104,16 @@ class StatusHandler:
 
         status = self._mail_queue.get_status(submission_id)
         if status:
-            return {'result': 'success', 'status': status}
+            return {'result': 'success', 'status': self._aggregate_status(status)}
         else:
             return {'result': 'error', 'message': 'unknown submission id {}'.format(submission_id)}
+
+    def _aggregate_status(self, status_tuples):
+        statuses = collections.Counter(status for _, status in status_tuples)
+        if len(statuses) == 1:
+            return status_tuples[0][1]
+        else:
+            return mailqueue.Status.QUEUED
 
 
 def main():
