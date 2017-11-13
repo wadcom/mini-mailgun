@@ -89,8 +89,7 @@ class MailQueue:
         if not rows:
             return None
 
-        # XXX
-        return rows[0]['status']
+        return [(r['rowid'], r['status']) for r in rows]
 
     def mark_as_sent(self, envelope):
         self._assert_envelope_has_id(envelope)
@@ -106,6 +105,8 @@ class MailQueue:
             (envelope.sender, ','.join(envelope.recipients), envelope.destination_domain,
              str(envelope.message), self.clock.time(), envelope.submission_id, envelope.status)
         )
+
+        return self._db_cursor.lastrowid
 
     def schedule_retry_in(self, envelope, retry_after):
         self._assert_envelope_has_id(envelope)

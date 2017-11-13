@@ -22,11 +22,12 @@ class TestMailQueue(unittest.TestCase):
 
     def test_roundtrip(self):
         self.mq.clock = self.FakeClock(123)
-        self.mq.put(self.valid_envelope)
+        assigned_id = self.mq.put(self.valid_envelope)
         e = self.mq.get()
         self.assertEnvelopesEqual(self.valid_envelope, e)
         self.assertEqual(123, e.next_attempt_at)
         self.assertEqual(mailqueue.Status.QUEUED, e.status)
+        self.assertEqual(assigned_id, e.id)
 
     def test_empty_queue_should_return_none_on_get(self):
         self.assertIsNone(self.mq.get())
@@ -75,10 +76,13 @@ class TestMailQueue(unittest.TestCase):
     def test_missing_submission_should_return_none_for_status(self):
         self.assertIsNone(self.mq.get_status(1))
 
-    def test_single_envelope_status_should_be_returned(self):
+    def test_envelope_status_should_be_returned(self):
         e = self.valid_envelope
-        self.mq.put(e)
-        self.assertEqual(mailqueue.Status.QUEUED, self.mq.get_status(e.submission_id))
+        id1 = self.mq.put(e)
+        id2 = self.mq.put(e)
+        expected = [(id1, mailqueue.Status.QUEUED), (id2, mailqueue.Status.QUEUED)]
+        result = self.mq.get_status(e.submission_id)
+        self.assertEqual(sorted(expected), sorted(result))
 
     # TODO increment number of retries
 
