@@ -7,6 +7,7 @@ import time
 
 
 class Status:
+    SENT = 'sent'
     QUEUED = 'queued'
 
 
