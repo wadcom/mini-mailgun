@@ -84,6 +84,10 @@ class TestMailQueue(unittest.TestCase):
         result = self.mq.get_status(e.submission_id)
         self.assertEqual(sorted(expected), sorted(result))
 
+    def test_new_envelope_should_have_zero_delivery_attempts(self):
+        e = self._put_and_get_envelope()
+        self.assertEqual(0, e.delivery_attempts)
+
     # TODO increment number of retries
 
     def assertEnvelopesEqual(self, expected, actual):

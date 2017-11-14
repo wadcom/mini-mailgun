@@ -50,7 +50,8 @@ class MailQueue:
             "message TEXT NOT NULL, "
             "next_attempt_at INTEGER NOT NULL, "
             + status_column +
-            "submission_id TEXT NOT NULL"
+            "submission_id TEXT NOT NULL, "
+            "delivery_attempts INTEGER NOT NULL DEFAULT 0"
             ")"
         )
 
@@ -68,6 +69,7 @@ class MailQueue:
         # TODO: test parsing recipients
         as_is = lambda x: x
         column_transformations = {
+            'delivery_attempts': int,
             'destination_domain': as_is,
             'message': email.message_from_string,
             'next_attempt_at': int,
