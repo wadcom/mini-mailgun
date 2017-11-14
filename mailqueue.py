@@ -57,7 +57,7 @@ class MailQueue:
     def get(self):
         self._db_cursor.execute(
             "SELECT rowid, * FROM envelopes "
-            "WHERE next_attempt_at <= ? LIMIT 1",
+            "WHERE next_attempt_at <= ? AND status='{}' LIMIT 1".format(Status.QUEUED),
             (self.clock.time(),)
         )
         row = self._db_cursor.fetchone()
@@ -94,7 +94,8 @@ class MailQueue:
 
     def mark_as_sent(self, envelope):
         self._assert_envelope_has_id(envelope)
-        self._execute_committing('DELETE FROM envelopes WHERE rowid=?', (envelope.id, ))
+        self._execute_committing(
+            'UPDATE envelopes SET status="{}" WHERE rowid=?'.format(Status.SENT), (envelope.id, ))
 
     # TODO: split it into domain-specific methods, e.g. put_new_envelope() etc
     def put(self, envelope):
