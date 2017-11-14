@@ -8,7 +8,8 @@ def make_valid_envelope():
                               destination_domain='target.domain',
                               message=make_valid_email(),
                               submission_id='a-submission-id',
-                              status=mailqueue.Status.QUEUED
+                              status=mailqueue.Status.QUEUED,
+                              delivery_attempts=1
                               )
 
 
