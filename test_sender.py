@@ -15,6 +15,7 @@ class TestDeliveryAgent(unittest.TestCase):
     def setUp(self):
         self.mq = mailqueue.MailQueue(fresh=True)
         self.mq.mark_as_sent = MagicMock()
+        self.mq.mark_as_undeliverable = MagicMock()
         self.mq.schedule_retry_in = MagicMock()
         self.dns_resolver = self.DNSResolverStub()
         self.dns_resolver.get_first_mx = MagicMock(return_value='mail.example.com')
@@ -56,6 +57,12 @@ class TestDeliveryAgent(unittest.TestCase):
         envelope = self._envelope_with_unresolvable_mx()
         self.delivery_agent.deliver_single_envelope()
         self.mq.schedule_retry_in.assert_called_once_with(envelope, 123)
+
+    def test_too_many_delivery_attempts_should_mark_envelope_undeliverable(self):
+        envelope = self._envelope_with_unresolvable_mx()
+        envelope.delivery_attempts = self.delivery_agent.max_delivery_attempts - 1
+        self.delivery_agent.deliver_single_envelope()
+        self.mq.mark_as_undeliverable.assert_called_once_with(envelope)
 
     def assertDeliveryResultIs(self, expected):
         result = self.delivery_agent.deliver_single_envelope()

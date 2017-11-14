@@ -30,6 +30,7 @@ class DeliveryAgent:
     DONE = 'DONE (there was at least one item to process)'
 
     def __init__(self, mailqueue, dns_resolver, smtp_client):
+        self.max_delivery_attempts = 4 # 1 initial, 3 retries
         self.retry_interval = 600 # seconds
 
         self._dns_resolver = dns_resolver
@@ -53,18 +54,29 @@ class DeliveryAgent:
                                                                 mx))
             self._smtp_client.send(mx, envelope)
         except TemporaryFailure as e:
-            logging.warning(
-                'Envelope {}: temporary failure ({}), scheduling to retry in {} seconds'.format(
-                    envelope.id, e, self.retry_interval
-            ))
+            self._handle_temporary_failure(e, envelope)
 
-            self._mailqueue.schedule_retry_in(envelope, self.retry_interval)
             return self.DONE
 
         logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id, mx))
 
         self._mailqueue.mark_as_sent(envelope)
         return self.DONE
+
+    def _handle_temporary_failure(self, exception, envelope):
+        attempts_performed = envelope.delivery_attempts + 1
+        if attempts_performed < self.max_delivery_attempts:
+            logging.warning(
+                'Envelope {}: temporary failure ({}), '
+                'scheduling to retry in {} seconds'.format(envelope.id, exception,
+                                                           self.retry_interval))
+            self._mailqueue.schedule_retry_in(envelope, self.retry_interval)
+        else:
+            logging.warning(
+                "Envelope {}: can't deliver after {} attempts, "
+                "marking as undeliverable".format(envelope.id, attempts_performed))
+            self._mailqueue.mark_as_undeliverable(envelope)
+
 
 class SMTPClient:
     # XXX: test for network issues (e.g. connection timeout etc)
