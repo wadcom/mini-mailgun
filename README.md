@@ -55,17 +55,55 @@ To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containe
 
 # HTTP API
 
-The service expects an HTTP POST request at the `/send` endpoint. The body of the POST request
-should be a JSON object of the following structure:
+## POST /send
+
+The body of the request should be a JSON object of the following structure:
 
     {
         "sender": "me@example.com",
-        "recipients": "alice@another.com, bob@third.com",
+        "recipients": ["alice@another.com", "bob@third.com"],
         "subject": "important message",
         "body": "hello!"
     }
 
-The system responds with a `200` status code if the message has been queued successfully.
+The system responds with a `200` status code if the message has been queued successfully. The
+response is structured like this:
+
+    {
+        "result": "queued",
+        "submission_id": "d0c539ee71a649528ed59c1a0e419afa"
+    }
+
+The `submission_id` is a unique identifier which can be used later to query the status of the
+submission.
+
+## POST /status
+
+The body of the request should be a JSON object of the following structure:
+
+    {
+        "submission_id": "d0c539ee71a649528ed59c1a0e419afa"
+    }
+
+The response is a JSON object like this:
+
+    {
+        "result": "success",
+        "status": "sent"
+    }
+
+`status` may be one of:
+ * `queued`: there is at least one recipient for whom the message has not yet been relayed to the
+ mail exchange
+ * `sent`: the message has been relayed to all recipients (it doesn't mean it has been delivered
+ though)
+
+In case of error the response is of the following format:
+
+    {
+        "result": "error",
+        "message": "Human-readable diagnostic message"
+    }
 
 # System Design
 
