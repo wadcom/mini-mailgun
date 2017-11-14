@@ -1,7 +1,7 @@
 # Mini-MailGun
 
 This simple service accepts requests to send email (as JSON-formatted HTTP POST requests) and
-relays them to an upstream SMTP server.
+relays them to appropriate mail exchanges (MXs) with SMTP.
 
 Prerequisites:
 
