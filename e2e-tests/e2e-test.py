@@ -10,6 +10,7 @@ import urllib.request
 Submission = collections.namedtuple('Submission', 'id')
 
 
+MAX_DELIVERY_ATTEMPTS = 4 # 1 initial, 3 retries
 SMTPSTUB_RETRY_INTERVAL = 5
 
 
@@ -45,6 +46,16 @@ class TestEndToEnd(unittest.TestCase):
         time.sleep(2 * SMTPSTUB_RETRY_INTERVAL)
         self.smtp_a.receives_email(email)
         self.client.observes_submission_status(submission, 'sent')
+
+    def test_delivery_attempts_should_be_limited(self):
+        email = Email(recipients=['undeliverable@aaa.com'])
+        submission = self.client.sends_email(email)
+        attempts_before_first_check = (MAX_DELIVERY_ATTEMPTS - 2)
+        time.sleep(attempts_before_first_check * SMTPSTUB_RETRY_INTERVAL)
+        self.client.observes_submission_status(submission, 'queued')
+        attempts_before_second_check = (MAX_DELIVERY_ATTEMPTS + 1 - attempts_before_first_check)
+        time.sleep(attempts_before_second_check * SMTPSTUB_RETRY_INTERVAL)
+        self.client.observes_submission_status(submission, 'undeliverable')
 
 class Client:
     # TODO: take it from an environment variable
