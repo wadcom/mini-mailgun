@@ -88,7 +88,22 @@ class TestMailQueue(unittest.TestCase):
         e = self._put_and_get_envelope()
         self.assertEqual(0, e.delivery_attempts)
 
-    # TODO increment number of retries
+    def test_scheduled_retry_should_increase_delivery_attempts_count(self):
+        e = self._put_and_get_envelope()
+        self.mq.schedule_retry_in(e, 0)
+        e = self.mq.get()
+        self.assertEqual(1, e.delivery_attempts)
+
+    def test_undeliverable_envelopes_should_not_be_retrieved(self):
+        e = self._put_and_get_envelope()
+        self.mq.mark_as_undeliverable(e)
+        self.assertIsNone(self.mq.get())
+
+    def test_envelope_marked_undeliverable_should_have_updated_status(self):
+        e = self._put_and_get_envelope()
+        self.mq.mark_as_undeliverable(e)
+        self.assertEqual([(1, mailqueue.Status.UNDELIVERABLE)],
+                         self.mq.get_status(e.submission_id))
 
     def assertEnvelopesEqual(self, expected, actual):
         if expected:

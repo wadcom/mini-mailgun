@@ -7,8 +7,9 @@ import time
 
 
 class Status:
-    SENT = 'sent'
     QUEUED = 'queued'
+    SENT = 'sent'
+    UNDELIVERABLE = 'undeliverable'
 
 
 class Envelope:
@@ -95,9 +96,10 @@ class MailQueue:
         return [(r['rowid'], r['status']) for r in rows]
 
     def mark_as_sent(self, envelope):
-        self._assert_envelope_has_id(envelope)
-        self._execute_committing(
-            'UPDATE envelopes SET status="{}" WHERE rowid=?'.format(Status.SENT), (envelope.id, ))
+        self._set_envelope_status(envelope, Status.SENT)
+
+    def mark_as_undeliverable(self, envelope):
+        self._set_envelope_status(envelope, Status.UNDELIVERABLE)
 
     # TODO: split it into domain-specific methods, e.g. put_new_envelope() etc
     def put(self, envelope):
@@ -115,8 +117,8 @@ class MailQueue:
     def schedule_retry_in(self, envelope, retry_after):
         self._assert_envelope_has_id(envelope)
         self._execute_committing(
-            "UPDATE envelopes SET next_attempt_at=? WHERE rowid=?",
-            (self.clock.time() + retry_after, envelope.id)
+            "UPDATE envelopes SET next_attempt_at=?, delivery_attempts=? WHERE rowid=?",
+            (self.clock.time() + retry_after, envelope.delivery_attempts + 1, envelope.id)
         )
 
     @staticmethod
@@ -126,6 +128,11 @@ class MailQueue:
     def _execute_committing(self, statement, *extra_args):
         self._db_cursor.execute(statement, *extra_args)
         self._db_conn.commit()
+
+    def _set_envelope_status(self, envelope, status):
+        self._assert_envelope_has_id(envelope)
+        self._execute_committing(
+            'UPDATE envelopes SET status="{}" WHERE rowid=?'.format(status), (envelope.id, ))
 
 
 class Manager:
