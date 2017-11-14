@@ -10,8 +10,21 @@ import aiosmtpd.controller
 class SMTPHandler:
     def __init__(self, log_queue):
         self._log_queue = log_queue
+        self._simulate_failure_for = {}
+
+    async def handle_MAIL(self, server, session, envelope, sender, *args):
+        if sender.startswith('tempfail-once-'):
+            if sender not in self._simulate_failure_for:
+                self._simulate_failure_for[sender] = True
+
+        envelope.mail_from = sender
+        return '250 ok'
 
     async def handle_DATA(self, server, session, envelope):
+        if self._simulate_failure_for.get(envelope.mail_from, False):
+            self._simulate_failure_for[envelope.mail_from] = False
+            return '451 Aborted as directed by the special sender address; try again later'
+
         self._log_queue.put(envelope)
         return '250 Ok, accepted'
 
