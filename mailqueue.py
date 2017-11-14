@@ -1,4 +1,5 @@
 import email
+import inspect
 import os
 import queue
 import sqlite3
@@ -135,6 +136,7 @@ class MailQueue:
             'UPDATE envelopes SET status="{}" WHERE rowid=?'.format(status), (envelope.id, ))
 
 
+# TODO: rename it to SynchronizedMailQueue
 class Manager:
     """A proxy synchronizing access to MailQueue from multiple threads.
 
@@ -149,13 +151,15 @@ class Manager:
         self._requests = queue.Queue(1)
         self._responses = queue.Queue(1)
 
-    def get_status(self, *args):
-        self._requests.put(('get_status', args))
-        return self._responses.get()
+        # XXX: factor out
+        methods = [name for name, _ in inspect.getmembers(MailQueue, inspect.isfunction)
+                   if not name.startswith('_')]
 
-    def put(self, *args):
-        self._requests.put(('put', args))
-        return self._responses.get()
+        for method in methods:
+            assert method not in self.__class__.__dict__, \
+                "name clash: method '{}' already exists in {}".format(method,
+                                                                      self.__class__.__name__)
+            self.__dict__[method] = self.ProxiedMethod(method, self._requests, self._responses)
 
     def start(self):
         self._manager_thread.start()
@@ -165,3 +169,13 @@ class Manager:
         while True:
             method, args = self._requests.get()
             self._responses.put(getattr(mq, method)(*args))
+
+    class ProxiedMethod:
+        def __init__(self, method_name, request_queue, response_queue):
+            self._method_name = method_name
+            self._request_queue = request_queue
+            self._response_queue = response_queue
+
+        def __call__(self, *args, **kwargs):
+            self._request_queue.put((self._method_name, args))
+            return self._response_queue.get()

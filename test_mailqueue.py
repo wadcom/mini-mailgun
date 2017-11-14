@@ -105,6 +105,9 @@ class TestMailQueue(unittest.TestCase):
         self.assertEqual([(1, mailqueue.Status.UNDELIVERABLE)],
                          self.mq.get_status(e.submission_id))
 
+    def test_mailqueue_manager_should_be_instantiated_successfully(self):
+        mailqueue.Manager()
+
     def assertEnvelopesEqual(self, expected, actual):
         if expected:
             self.assertIsNotNone(actual)
