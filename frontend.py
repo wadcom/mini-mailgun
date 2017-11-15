@@ -21,16 +21,18 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/send':
-            self._handle_post_with(SendHandler)
+            handler = SendHandler(mq_manager)
         elif self.path == '/status':
-            self._handle_post_with(StatusHandler)
+            handler = StatusHandler(mq_manager)
         else:
             self.send_error(404, 'Not found')
 
-    def _handle_post_with(self, handler_class):
+        self._handle_post_with(handler)
+
+    def _handle_post_with(self, handler):
         try:
             body = self._get_json_body()
-            response_data = handler_class(mq_manager).run(body)
+            response_data = handler.run(body)
             self._respond_json(response_data)
         except ValueError as e:
             self.send_error(400, e.args[0])
