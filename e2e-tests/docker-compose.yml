@@ -7,6 +7,7 @@ services:
       - "5080:5000"
     volumes:
       - '.:/mailq'
+      - './known-clients.txt:/conf/clients'
 
   sender-1:
     image: mini-mailgun/bundle

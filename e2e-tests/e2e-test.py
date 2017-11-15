@@ -5,13 +5,14 @@ import json
 import random
 import time
 import unittest
+import urllib.error
 import urllib.request
 
 Submission = collections.namedtuple('Submission', 'id')
 
 
 MAX_DELIVERY_ATTEMPTS = 4 # 1 initial, 3 retries
-SMTPSTUB_RETRY_INTERVAL = 5
+SMTPSTUB_RETRY_INTERVAL = 3
 
 
 class TestEndToEnd(unittest.TestCase):
@@ -64,18 +65,45 @@ class TestEndToEnd(unittest.TestCase):
         self.client.sends_email(email_b)
         self.smtp_b.receives_email(email_b)
 
+    def test_unauthenticated_clients_should_be_rejected(self):
+        Client('unauthenticated').gets_auth_error_when_sending_email()
+
+    def test_client_cannot_access_another_clients_submissions(self):
+        submission = self.client.sends_email(Email(recipients=['a@a.com']))
+        Client('another_client').doesnt_observe_submission_status(submission)
+
 
 class Client:
     # TODO: take it from an environment variable
     MINIMAILGUN_URL = 'http://127.0.0.1:5080'
 
+    def __init__(self, client_id='authenticated_client'):
+        self._client_id = client_id
+
+    def doesnt_observe_submission_status(self, submission):
+        r = self._get_submission_status(submission.id)
+        assert r['result'] == 'error', "expected error, actual response: {}".format(r)
+
+    def gets_auth_error_when_sending_email(self):
+        self._access_mailgun_expecting_auth_error(
+            '/send',
+            {
+                'client_id': self._client_id,
+                'sender': 'unused@unused.com',
+                'recipients': [],
+                'subject': 'should be rejected as unauthenticated',
+                'body': 'the body of\n the message\n'
+            }
+        )
+
     def observes_submission_status(self, submission, expected_status):
-        r = self._access_minimailgun('/status', {'submission_id': submission.id})
+        r = self._get_submission_status(submission.id)
         assert r == {'result': 'success', 'status': expected_status}, \
             "expected status '{}', actual response: {}".format(expected_status, r)
 
     def sends_email(self, email):
         r = self._access_minimailgun('/send', {
+            'client_id': self._client_id,
             'sender': email.sender,
             'recipients': email.recipients,
             'subject': 'end-to-end test',
@@ -95,6 +123,25 @@ class Client:
 
         data = response.read()
         return json.loads(data)
+
+    def _access_mailgun_expecting_auth_error(self, endpoint, request_data):
+        try:
+            r = self._access_minimailgun(endpoint, request_data)
+        except urllib.error.HTTPError as e:
+            assert e.code == 401, "expected status 401, received {}".format(e.code)
+            return
+
+        raise AssertionError(
+            'unexpectedly successful HTTP response (client_id={}, response={})'.format(
+                self._client_id, r)
+        )
+
+    def _get_submission_status(self, submission_id):
+        return self._access_minimailgun('/status',
+                                        {
+                                            'client_id': self._client_id,
+                                            'submission_id': submission_id
+                                        })
 
 
 class SMTPServer:
