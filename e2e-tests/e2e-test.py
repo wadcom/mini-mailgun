@@ -105,17 +105,15 @@ class SMTPServer:
 
     def receives_email(self, expected_email):
         # TODO: enforce strict checks for mail from, recipients etc
-        started_at = time.time()
-        while True:
-            with open(self.domain + '-smtp.log') as logfile:
-                if (expected_email.sender + '\n') in logfile.readlines():
-                    return
 
-            assert (time.time() - started_at) <= self.TIMEOUT, \
-                "Message from '{}' wasn't received within {} seconds by '{}'".format(
-                    expected_email.sender, self.TIMEOUT, self.domain)
+        time.sleep(self.TIMEOUT)
+        with open(self.domain + '-smtp.log') as logfile:
+            senders_count = collections.Counter(s.strip() for s in logfile.readlines())
 
-            time.sleep(0.1)
+        assert senders_count[expected_email.sender] == 1, \
+            "After {} seconds email from '{}' was received {} times, expected 1".format(
+                self.TIMEOUT, expected_email.sender, senders_count[expected_email]
+            )
 
 
 class Email:
