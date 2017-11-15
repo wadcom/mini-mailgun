@@ -146,11 +146,12 @@ simplicity (having to deal with a single table).
 To scale frontends of this architecture, one can just run multiple `frontend` containers sharing
 the same database volume. SQLite3 will serialize writes.
 
-To scale the number of senders, we'll need to implement sharding logic in those components.
+It is possible to run multiple senders in a sharded configuration (unique envelope id acts as the
+sharding key).
 
 This will work until database contention becomes too high. At that point the next step might be to
 shard on writes (e.g. use multiple databases with customer id as sharding key).
 
 Another avenue for improvement is to batch multiple messages over the same SMTP connection, to
-keep per-MX availability status (e.g. avoid delivery to an MX which is known to be unavailable) or
-use other smart strategies.
+keep per-MX availability status (e.g. avoid delivery to an MX which is known to be unavailable),
+cache DNS lookups and use other smart strategies.
