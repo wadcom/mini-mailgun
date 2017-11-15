@@ -88,6 +88,13 @@ class MailQueue:
 
         return self._db_cursor.lastrowid
 
+    def remove_inactive_envelopes(self, cutoff):
+        self._execute_committing(
+            'DELETE FROM envelopes WHERE status<>"{}" AND next_attempt_at < ?'.format(
+                Status.QUEUED),
+            (self.clock.time() - cutoff,)
+        )
+
     def schedule_retry_in(self, envelope, retry_after):
         self._assert_envelope_has_id(envelope)
         self._execute_committing(

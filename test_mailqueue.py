@@ -128,6 +128,29 @@ class TestMailQueue(unittest.TestCase):
         self.mq.put(e)
         self.assertIsNone(self.mq.get_status('B', e.submission_id))
 
+    def test_envelopes_before_cutoff_should_be_removed(self):
+        self.mq.clock = self.FakeClock(100)
+        e = self._put_and_get_envelope()
+        self.mq.mark_as_sent(e)
+        self.mq.clock.set(200)
+        self.mq.remove_inactive_envelopes(50)
+        self.assertIsNone(self.mq.get_status(e.client_id, e.submission_id))
+
+    def test_envelopes_after_cutoff_should_not_be_removed(self):
+        self.mq.clock = self.FakeClock(100)
+        e = self._put_and_get_envelope()
+        self.mq.mark_as_sent(e)
+        self.mq.remove_inactive_envelopes(50)
+        self.assertIsNotNone(self.mq.get_status(e.client_id, e.submission_id))
+
+    def test_undeliverable_envelopes_should_be_considered_inactive(self):
+        self.mq.clock = self.FakeClock(100)
+        e = self._put_and_get_envelope()
+        self.mq.mark_as_undeliverable(e)
+        self.mq.clock.set(200)
+        self.mq.remove_inactive_envelopes(50)
+        self.assertIsNone(self.mq.get_status(e.client_id, e.submission_id))
+
     def assertEnvelopesEqual(self, expected, actual):
         if expected:
             self.assertIsNotNone(actual)
