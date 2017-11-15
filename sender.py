@@ -19,8 +19,9 @@ def main():
     setup_logging()
 
     retry_interval = int(os.environ.get('RETRY_INTERVAL', 600))
+    shard, shards = get_sharding_configuration()
 
-    mq_manager = mailqueue.Manager()
+    mq_manager = mailqueue.Manager(shard=shard, shards=shards)
     mq_manager.start()
 
     for _ in range(DELIVERY_THREADS):
@@ -157,6 +158,12 @@ class DNSResolver:
                             for r in dns.resolver.query(domain, 'MX'))
         # TODO: handle no MX records
         return mx_records[0][1]
+
+
+def get_sharding_configuration():
+    shard, shards = os.environ.get('SHARD', '1/1').split('/')
+    logging.info('Running as shard {} of {}'.format(shard, shards))
+    return int(shard) - 1, int(shards)
 
 
 def setup_logging():
