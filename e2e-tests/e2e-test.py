@@ -57,6 +57,14 @@ class TestEndToEnd(unittest.TestCase):
         time.sleep(attempts_before_second_check * SMTPSTUB_RETRY_INTERVAL)
         self.client.observes_submission_status(submission, 'undeliverable')
 
+    def test_concurrent_delivery(self):
+        email_a = Email.causing_server_to_stall(recipients=['a@a.com'])
+        email_b = Email(recipients=['b@b.com'])
+        self.client.sends_email(email_a)
+        self.client.sends_email(email_b)
+        self.smtp_b.receives_email(email_b)
+
+
 class Client:
     # TODO: take it from an environment variable
     MINIMAILGUN_URL = 'http://127.0.0.1:5080'
@@ -116,9 +124,14 @@ class Email:
         self._recipients = recipients
 
     @classmethod
+    def causing_server_to_stall(cls, recipients):
+        return cls(recipients=recipients,
+                   sender=cls._make_unique_address(prefix='stall-'))
+
+    @classmethod
     def causing_server_to_tempfail_once(cls, recipients):
         return cls(recipients=recipients,
-                   sender='tempfail-once-' + cls._make_unique_string() + '@e2e-test.com')
+                   sender=cls._make_unique_address(prefix='tempfail-once-'))
 
     @property
     def recipients(self):
@@ -128,13 +141,9 @@ class Email:
     def sender(self):
         return self._sender
 
-    @classmethod
-    def _make_unique_address(cls):
-        return cls._make_unique_string() + '@e2e-test.com'
-
     @staticmethod
-    def _make_unique_string():
-        return str(random.randint(0, 10**10))
+    def _make_unique_address(prefix=''):
+        return prefix + str(random.randint(0, 10**10)) + '@e2e-test.com'
 
 
 if __name__ == '__main__':
