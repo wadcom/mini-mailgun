@@ -52,9 +52,10 @@ class MailQueue:
         row = self._select_row_for_processing()
         return self._convert_row_to_envelope(row) if row else None
 
-    def get_status(self, submission_id):
+    def get_status(self, client_id, submission_id):
         self._db_cursor.execute(
-            "SELECT rowid, * FROM envelopes WHERE submission_id=?", (submission_id,)
+            "SELECT rowid, * FROM envelopes WHERE submission_id=? AND client_id=?",
+            (submission_id, client_id)
         )
 
         rows = self._db_cursor.fetchall()
@@ -69,16 +70,22 @@ class MailQueue:
     def mark_as_undeliverable(self, envelope):
         self._set_envelope_status(envelope, Status.UNDELIVERABLE)
 
-    # TODO: split it into domain-specific methods, e.g. put_new_envelope() etc
     def put(self, envelope):
-        self._execute_committing(
-            'INSERT INTO envelopes '
-            '(sender, recipients, destination_domain, message, next_attempt_at, submission_id, '
-            'status) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?)',
-            (envelope.sender, ','.join(envelope.recipients), envelope.destination_domain,
-             str(envelope.message), self.clock.time(), envelope.submission_id, envelope.status)
-        )
+        fields = {
+            'client_id': envelope.client_id,
+            'destination_domain': envelope.destination_domain,
+            'message': str(envelope.message),
+            'next_attempt_at': self.clock.time(),
+            'recipients': ','.join(envelope.recipients),
+            'sender': envelope.sender,
+            'submission_id': envelope.submission_id,
+            'status': envelope.status
+        }
+
+        statement = 'INSERT INTO envelopes ({}) VALUES ({})'.format(', '.join(fields.keys()),
+                                                                    ', '.join('?' * len(fields)))
+
+        self._execute_committing(statement, tuple(fields[k] for k in fields.keys()))
 
         return self._db_cursor.lastrowid
 
@@ -99,6 +106,7 @@ class MailQueue:
         # TODO: test parsing recipients
         as_is = lambda x: x
         column_transformations = {
+            'client_id': as_is,
             'delivery_attempts': int,
             'destination_domain': as_is,
             'message': email.message_from_string,
@@ -129,7 +137,8 @@ class MailQueue:
             + status_column +
             "submission_id TEXT NOT NULL, "
             "delivery_attempts INTEGER NOT NULL DEFAULT 0, "
-            "being_processed BOOLEAN NOT NULL DEFAULT 0"
+            "being_processed BOOLEAN NOT NULL DEFAULT 0, "
+            "client_id TEXT NOT NULL"
             ")"
         )
 

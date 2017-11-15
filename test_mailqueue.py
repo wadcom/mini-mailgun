@@ -74,14 +74,14 @@ class TestMailQueue(unittest.TestCase):
         self.assertIsNone(self.mq.get())
 
     def test_missing_submission_should_return_none_for_status(self):
-        self.assertIsNone(self.mq.get_status(1))
+        self.assertIsNone(self.mq.get_status('unused', 1))
 
     def test_envelope_status_should_be_returned(self):
         e = self.valid_envelope
         id1 = self.mq.put(e)
         id2 = self.mq.put(e)
         expected = [(id1, mailqueue.Status.QUEUED), (id2, mailqueue.Status.QUEUED)]
-        result = self.mq.get_status(e.submission_id)
+        result = self.mq.get_status(e.client_id, e.submission_id)
         self.assertEqual(sorted(expected), sorted(result))
 
     def test_new_envelope_should_have_zero_delivery_attempts(self):
@@ -103,7 +103,7 @@ class TestMailQueue(unittest.TestCase):
         e = self._put_and_get_envelope()
         self.mq.mark_as_undeliverable(e)
         self.assertEqual([(1, mailqueue.Status.UNDELIVERABLE)],
-                         self.mq.get_status(e.submission_id))
+                         self.mq.get_status(e.client_id, e.submission_id))
 
     def test_mailqueue_manager_should_be_instantiated_successfully(self):
         mailqueue.Manager()
@@ -121,6 +121,12 @@ class TestMailQueue(unittest.TestCase):
         mq1.put(testhelpers.make_valid_envelope())
         self.assertIsNone(mq1.get())
         self.assertIsNotNone(mq2.get())
+
+    def test_status_of_another_clients_submission_should_not_be_returned(self):
+        e = self.valid_envelope
+        e.client_id = 'A'
+        self.mq.put(e)
+        self.assertIsNone(self.mq.get_status('B', e.submission_id))
 
     def assertEnvelopesEqual(self, expected, actual):
         if expected:
