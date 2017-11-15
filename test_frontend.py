@@ -15,6 +15,7 @@ class TestSendHandler(unittest.TestCase):
         self.mq.put = MagicMock()
         self.handler = frontend.SendHandler(self.mq)
         self.valid_request_dict = {
+            'client_id': 'valid_client_id',
             'sender': 'someone',
             'recipients': ['alice@here.com', 'bob@there.com'],
             'subject': 'important message',
@@ -66,7 +67,7 @@ class TestSendHandler(unittest.TestCase):
         self.assertEqual(2, self.mq.put.call_count)
 
     def test_missing_request_keys_should_not_affect_queue(self):
-        for k in self.valid_request_dict:
+        for k in set(self.valid_request_dict) - set(['client_id']):
             with self.subTest(field=k):
                 self.mq.put.reset_mock()
 
@@ -104,6 +105,11 @@ class TestSendHandler(unittest.TestCase):
             self._valid_request_with_field('subject', 'my subject'))
         self.assertEqual('my subject', e.message['Subject'])
 
+    def test_client_id_should_appear_in_envelope(self):
+        e = self._run_handler_and_get_result_envelope(
+            self._valid_request_with_field('client_id', 'my-client'))
+        self.assertEqual('my-client', e.client_id)
+
     @staticmethod
     def _last_call_first_arg(mock):
         """Convenience method to return the first argument of the last call to the mock."""
@@ -129,17 +135,18 @@ class TestStatusHandler(unittest.TestCase):
     def test_unknown_status_should_result_in_error(self):
         self.mq.get_status = MagicMock(return_value=None)
         self.assertEqual({'result': 'error', 'message': 'unknown submission id 1'},
-                         self._get_submission_status(1))
+                         self._get_submission_status(submission_id=1))
 
     def test_request_should_query_mail_queue(self):
         status = 'opaque status value from mail queue'
 
-        submission_id = self.mq.put(testhelpers.make_valid_envelope())
+        envelope = testhelpers.make_valid_envelope()
+        submission_id = self.mq.put(envelope)
         self.mq.get_status = MagicMock(return_value=[(1, status)])
 
-        result = self._get_submission_status(submission_id)
+        result = self._get_submission_status(envelope.client_id, submission_id)
 
-        self.mq.get_status.assert_called_once_with(submission_id)
+        self.mq.get_status.assert_called_once_with(envelope.client_id, submission_id)
         self.assertEqual({'result': 'success', 'status': status}, result)
 
     def test_missing_submission_id_should_raise_value_error(self):
@@ -160,8 +167,8 @@ class TestStatusHandler(unittest.TestCase):
         result = self._get_submission_status()
         self.assertEqual(mailqueue.Status.QUEUED, result['status'])
 
-    def _get_submission_status(self, submission_id=123):
-        return self.handler.run({'submission_id': submission_id})
+    def _get_submission_status(self, client_id='unspecified-client-id', submission_id=123):
+        return self.handler.run({'client_id': client_id, 'submission_id': submission_id})
 
 
 if __name__ == '__main__':

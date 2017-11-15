@@ -11,6 +11,22 @@ import mailqueue
 
 
 mq_manager = mailqueue.Manager()
+valid_client_ids = set()
+
+
+def main():
+    load_client_info()
+
+    server = ThreadedHTTPServer(('', 5000), Handler)
+
+    mq_manager.start()
+    server.serve_forever()
+
+
+def load_client_info():
+    global valid_client_ids
+    with open('/conf/clients', 'r') as f:
+        valid_client_ids = set(s.strip() for s in f.readlines())
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -32,6 +48,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _handle_post_with(self, handler):
         try:
             body = self._get_json_body()
+
+            if body.get('client_id') not in valid_client_ids:
+                self.send_error(401, 'Missing or invalid client_id: {}'.format(body))
+                return
+
             response_data = handler.run(body)
             self._respond_json(response_data)
         except ValueError as e:
@@ -61,7 +82,8 @@ class SendHandler:
     def run(self, request_dict):
         message = self._make_message(request_dict)
         submission_id = uuid.uuid4().hex
-        envelopes = self._make_envelopes(submission_id, message, request_dict['recipients'])
+        envelopes = self._make_envelopes(request_dict['client_id'], submission_id, message,
+                                         request_dict['recipients'])
 
         for e in envelopes:
             self._mail_queue.put(e)
@@ -69,7 +91,7 @@ class SendHandler:
         return {'result': 'queued', 'submission_id': submission_id}
 
     @staticmethod
-    def _make_envelopes(submission_id, message, recipients):
+    def _make_envelopes(client_id, submission_id, message, recipients):
         domain_to_recipients = collections.defaultdict(list)
         for r in recipients:
             _, domain = r.split('@')
@@ -77,7 +99,7 @@ class SendHandler:
 
         return (mailqueue.Envelope(sender='XXX', recipients=r, destination_domain=d,
                                    message=message, submission_id=submission_id,
-                                   status=mailqueue.Status.QUEUED)
+                                   status=mailqueue.Status.QUEUED, client_id=client_id)
                 for d, r in domain_to_recipients.items())
 
     @staticmethod
@@ -104,7 +126,11 @@ class StatusHandler:
         except KeyError as e:
             raise ValueError('Missing request field "{}"'.format(e)) from None
 
-        status = self._mail_queue.get_status(submission_id)
+        assert 'client_id' in request_dict, \
+            "missing 'client_dict' in request, should've been caught during authentication " \
+            "(request: {})".format(request_dict)
+
+        status = self._mail_queue.get_status(request_dict['client_id'], submission_id)
         if status:
             return {'result': 'success', 'status': self._aggregate_status(status)}
         else:
@@ -116,13 +142,6 @@ class StatusHandler:
             return status_tuples[0][1]
         else:
             return mailqueue.Status.QUEUED
-
-
-def main():
-    server = ThreadedHTTPServer(('', 5000), Handler)
-
-    mq_manager.start()
-    server.serve_forever()
 
 
 if __name__ == '__main__':
