@@ -4,25 +4,43 @@ import logging
 import os
 import smtplib
 import socket
+import threading
 import time
 
 import dns.resolver
 
 import mailqueue
 
+
+DELIVERY_THREADS = 5
+
+
 def main():
     setup_logging()
 
-    delivery_agent = DeliveryAgent(mailqueue.MailQueue(), get_dns_resolver(), SMTPClient())
+    retry_interval = int(os.environ.get('RETRY_INTERVAL', 600))
 
-    if 'RETRY_INTERVAL' in os.environ:
-        delivery_agent.retry_interval = int(os.environ['RETRY_INTERVAL'])
+    mq_manager = mailqueue.Manager()
+    mq_manager.start()
+
+    for _ in range(DELIVERY_THREADS):
+        d = DeliveryThread(mq_manager, retry_interval)
+        d.start()
 
     while True:
-        # TODO: retrieve a batch of messages and group by destination domain to reuse SMTP sessions
-        # to the same MX
-        if delivery_agent.deliver_single_envelope() == DeliveryAgent.IDLE:
-            time.sleep(1)
+        time.sleep(1)
+
+
+class DeliveryThread(threading.Thread):
+    def __init__(self, mq_manager, retry_interval):
+        super().__init__()
+        self.daemon = True
+        self._delivery_agent = DeliveryAgent(mq_manager, get_dns_resolver(), SMTPClient())
+        self._delivery_agent.retry_interval = retry_interval
+
+    def run(self):
+        while True:
+            self._delivery_agent.deliver_single_envelope()
 
 
 class DeliveryAgent:
@@ -110,6 +128,8 @@ class TemporaryFailure(Exception):
 
 
 def get_dns_resolver():
+    # TODO: each DeliveryThread will do this (thus repeating the work and littering the log),
+    # need to restructure it.
     static_mx_config = os.environ.get('STATIC_MX_CONFIG')
     if static_mx_config:
         logging.info('Using static MX configuration: {}'.format(static_mx_config))
