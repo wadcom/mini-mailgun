@@ -108,6 +108,13 @@ class TestMailQueue(unittest.TestCase):
     def test_mailqueue_manager_should_be_instantiated_successfully(self):
         mailqueue.Manager()
 
+    def test_message_taken_should_not_be_retrieved_by_another_instance(self):
+        mq1 = mailqueue.MailQueue(fresh=True)
+        mq2 = mailqueue.MailQueue(fresh=False)
+        mq1.put(testhelpers.make_valid_envelope())
+        mq1.get()
+        self.assertIsNone(mq2.get())
+
     def assertEnvelopesEqual(self, expected, actual):
         if expected:
             self.assertIsNotNone(actual)

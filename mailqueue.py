@@ -53,37 +53,14 @@ class MailQueue:
             "next_attempt_at INTEGER NOT NULL, "
             + status_column +
             "submission_id TEXT NOT NULL, "
-            "delivery_attempts INTEGER NOT NULL DEFAULT 0"
+            "delivery_attempts INTEGER NOT NULL DEFAULT 0, "
+            "being_processed BOOLEAN NOT NULL DEFAULT 0"
             ")"
         )
 
     def get(self):
-        self._db_cursor.execute(
-            "SELECT rowid, * FROM envelopes "
-            "WHERE next_attempt_at <= ? AND status='{}' LIMIT 1".format(Status.QUEUED),
-            (self.clock.time(),)
-        )
-        row = self._db_cursor.fetchone()
-
-        if not row:
-            return None
-
-        # TODO: test parsing recipients
-        as_is = lambda x: x
-        column_transformations = {
-            'delivery_attempts': int,
-            'destination_domain': as_is,
-            'message': email.message_from_string,
-            'next_attempt_at': int,
-            'recipients': lambda x: x.split(','),
-            'sender': as_is,
-            'status': as_is,
-            'submission_id': as_is
-        }
-
-        return Envelope(id=row['rowid'],
-                        **{k: f(row[k]) for k, f in column_transformations.items()})
-
+        row = self._select_row_for_processing()
+        return self._convert_row_to_envelope(row) if row else None
 
     def get_status(self, submission_id):
         self._db_cursor.execute(
@@ -118,7 +95,8 @@ class MailQueue:
     def schedule_retry_in(self, envelope, retry_after):
         self._assert_envelope_has_id(envelope)
         self._execute_committing(
-            "UPDATE envelopes SET next_attempt_at=?, delivery_attempts=? WHERE rowid=?",
+            "UPDATE envelopes SET next_attempt_at=?, delivery_attempts=?, being_processed=0 "
+            "WHERE rowid=?",
             (self.clock.time() + retry_after, envelope.delivery_attempts + 1, envelope.id)
         )
 
@@ -126,9 +104,39 @@ class MailQueue:
     def _assert_envelope_has_id(envelope):
         assert envelope.id, '{}: invalid envelope id "{}"'.format(envelope, envelope.id)
 
+    @staticmethod
+    def _convert_row_to_envelope(row):
+        # TODO: test parsing recipients
+        as_is = lambda x: x
+        column_transformations = {
+            'delivery_attempts': int,
+            'destination_domain': as_is,
+            'message': email.message_from_string,
+            'next_attempt_at': int,
+            'recipients': lambda x: x.split(','),
+            'sender': as_is,
+            'status': as_is,
+            'submission_id': as_is
+        }
+        return Envelope(id=row['rowid'],
+                        **{k: f(row[k]) for k, f in column_transformations.items()})
+
     def _execute_committing(self, statement, *extra_args):
         self._db_cursor.execute(statement, *extra_args)
         self._db_conn.commit()
+
+    def _select_row_for_processing(self):
+        self._db_cursor.execute(
+            "SELECT rowid, * FROM envelopes "
+            "WHERE next_attempt_at <= ? AND status='{}' AND being_processed=0 "
+            "LIMIT 1".format(Status.QUEUED), (self.clock.time(),)
+        )
+        row = self._db_cursor.fetchone()
+
+        if row:
+            self._execute_committing("UPDATE envelopes SET being_processed=1 WHERE rowid=?",
+                                     (row['rowid'],))
+        return row
 
     def _set_envelope_status(self, envelope, status):
         self._assert_envelope_has_id(envelope)
