@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+import asyncio
 import os
 import threading
 import time
@@ -16,6 +17,8 @@ class SMTPHandler:
         if sender.startswith('tempfail-once-'):
             if sender not in self._simulate_failure_for:
                 self._simulate_failure_for[sender] = True
+        elif sender.startswith('stall-'):
+            await asyncio.sleep(15)
 
         envelope.mail_from = sender
         return '250 ok'
