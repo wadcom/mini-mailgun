@@ -9,7 +9,8 @@ def make_valid_envelope():
                               message=make_valid_email(),
                               submission_id='a-submission-id',
                               status=mailqueue.Status.QUEUED,
-                              delivery_attempts=1
+                              delivery_attempts=1,
+                              client_id='testhelpers_client_id'
                               )
 
 
