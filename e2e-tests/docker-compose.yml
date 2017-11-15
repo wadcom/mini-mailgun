@@ -1,5 +1,14 @@
 version: '3'
 services:
+  cleaner:
+    image: mini-mailgun/bundle
+    entrypoint: ./cleaner.py
+    environment:
+      CLEANUP_INTERVAL: 10
+      RETENTION_PERIOD: 30
+    volumes:
+      - '.:/mailq'
+
   frontend:
     image: mini-mailgun/bundle
     entrypoint: ./frontend.py

@@ -12,6 +12,7 @@ ENV PYTHONUNBUFFERED=TRUE
 WORKDIR /app
 
 COPY \
+    cleaner.py \
     frontend.py \
     mailqueue.py \
     sender.py \
