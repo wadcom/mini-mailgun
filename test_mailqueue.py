@@ -132,7 +132,6 @@ class TestMailQueue(unittest.TestCase):
         if expected:
             self.assertIsNotNone(actual)
 
-        self.assertEqual(expected.sender, actual.sender)
         self.assertEqual(expected.recipients, actual.recipients)
         self.assertEqual(expected.destination_domain, actual.destination_domain)
         self.assertEqual(str(expected.message), str(actual.message))

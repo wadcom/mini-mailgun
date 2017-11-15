@@ -3,8 +3,7 @@ import email
 import mailqueue
 
 def make_valid_envelope():
-    return mailqueue.Envelope(sender='sender@address.com',
-                              recipients=['alice@target.domain', 'bob@target.domain'],
+    return mailqueue.Envelope(recipients=['alice@target.domain', 'bob@target.domain'],
                               destination_domain='target.domain',
                               message=make_valid_email(),
                               submission_id='a-submission-id',

@@ -77,7 +77,6 @@ class MailQueue:
             'message': str(envelope.message),
             'next_attempt_at': self.clock.time(),
             'recipients': ','.join(envelope.recipients),
-            'sender': envelope.sender,
             'submission_id': envelope.submission_id,
             'status': envelope.status
         }
@@ -112,7 +111,6 @@ class MailQueue:
             'message': email.message_from_string,
             'next_attempt_at': int,
             'recipients': lambda x: x.split(','),
-            'sender': as_is,
             'status': as_is,
             'submission_id': as_is
         }
@@ -129,7 +127,6 @@ class MailQueue:
         )
         self._execute_committing(
             "CREATE TABLE IF NOT EXISTS envelopes ("
-            "sender TEXT NOT NULL, "
             "recipients TEXT NOT NULL, "
             "destination_domain TEXT NOT NULL, "
             "message TEXT NOT NULL, "

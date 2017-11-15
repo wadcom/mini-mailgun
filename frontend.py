@@ -97,9 +97,9 @@ class SendHandler:
             _, domain = r.split('@')
             domain_to_recipients[domain].append(r)
 
-        return (mailqueue.Envelope(sender='XXX', recipients=r, destination_domain=d,
-                                   message=message, submission_id=submission_id,
-                                   status=mailqueue.Status.QUEUED, client_id=client_id)
+        return (mailqueue.Envelope(recipients=r, destination_domain=d, message=message,
+                                   submission_id=submission_id, status=mailqueue.Status.QUEUED,
+                                   client_id=client_id)
                 for d, r in domain_to_recipients.items())
 
     @staticmethod
