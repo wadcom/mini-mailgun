@@ -8,11 +8,23 @@ services:
     volumes:
       - '.:/mailq'
 
-  sender:
+  sender-1:
     image: mini-mailgun/bundle
     entrypoint: ./sender.py
     environment:
       RETRY_INTERVAL: 5
+      SHARD: 1/2
+      SMTP_PORT: 5000
+      STATIC_MX_CONFIG: a.com:smtp-a,b.com:smtp-b
+    volumes:
+      - '.:/mailq'
+
+  sender-2:
+    image: mini-mailgun/bundle
+    entrypoint: ./sender.py
+    environment:
+      RETRY_INTERVAL: 5
+      SHARD: 2/2
       SMTP_PORT: 5000
       STATIC_MX_CONFIG: a.com:smtp-a,b.com:smtp-b
     volumes:
