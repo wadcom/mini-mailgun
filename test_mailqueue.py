@@ -115,6 +115,13 @@ class TestMailQueue(unittest.TestCase):
         mq1.get()
         self.assertIsNone(mq2.get())
 
+    def test_sharded_envelopes_should_be_retrieved_by_correct_shards(self):
+        mq1 = mailqueue.MailQueue(fresh=True, shards=2, shard=0)
+        mq2 = mailqueue.MailQueue(fresh=False, shards=2, shard=1)
+        mq1.put(testhelpers.make_valid_envelope())
+        self.assertIsNone(mq1.get())
+        self.assertIsNotNone(mq2.get())
+
     def assertEnvelopesEqual(self, expected, actual):
         if expected:
             self.assertIsNotNone(actual)

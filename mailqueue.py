@@ -27,7 +27,7 @@ class MailQueue:
 
     DB_FILE = '/mailq/messages.db'
 
-    def __init__(self, fresh=False):
+    def __init__(self, fresh=False, shards=1, shard=0):
         if fresh:
             try:
                 os.remove(self.DB_FILE)
@@ -36,27 +36,17 @@ class MailQueue:
 
         self.clock = time
 
+        assert shards >= 1, "invalid total number of shards ({})".format(shards)
+        assert shard < shards, \
+            "invalid shard id {} (should be between 0 and {} inclusive)".format(shard, shards-1)
+        self._shards = shards
+        self._shard = shard
+
         self._db_conn = sqlite3.connect(self.DB_FILE)
         self._db_conn.row_factory = sqlite3.Row
         self._db_cursor = self._db_conn.cursor()
 
-        status_column = "status TEXT CHECK({}) NOT NULL, ".format(' or '.join(
-            'status="{}"'.format(v) for k, v in Status.__dict__.items() if not k.startswith('_'))
-        )
-
-        self._execute_committing(
-            "CREATE TABLE IF NOT EXISTS envelopes ("
-            "sender TEXT NOT NULL, "
-            "recipients TEXT NOT NULL, "
-            "destination_domain TEXT NOT NULL, "
-            "message TEXT NOT NULL, "
-            "next_attempt_at INTEGER NOT NULL, "
-            + status_column +
-            "submission_id TEXT NOT NULL, "
-            "delivery_attempts INTEGER NOT NULL DEFAULT 0, "
-            "being_processed BOOLEAN NOT NULL DEFAULT 0"
-            ")"
-        )
+        self._initialize_database()
 
     def get(self):
         row = self._select_row_for_processing()
@@ -125,11 +115,30 @@ class MailQueue:
         self._db_cursor.execute(statement, *extra_args)
         self._db_conn.commit()
 
+    def _initialize_database(self):
+        status_column = "status TEXT CHECK({}) NOT NULL, ".format(' or '.join(
+            'status="{}"'.format(v) for k, v in Status.__dict__.items() if not k.startswith('_'))
+        )
+        self._execute_committing(
+            "CREATE TABLE IF NOT EXISTS envelopes ("
+            "sender TEXT NOT NULL, "
+            "recipients TEXT NOT NULL, "
+            "destination_domain TEXT NOT NULL, "
+            "message TEXT NOT NULL, "
+            "next_attempt_at INTEGER NOT NULL, "
+            + status_column +
+            "submission_id TEXT NOT NULL, "
+            "delivery_attempts INTEGER NOT NULL DEFAULT 0, "
+            "being_processed BOOLEAN NOT NULL DEFAULT 0"
+            ")"
+        )
+
     def _select_row_for_processing(self):
         self._db_cursor.execute(
             "SELECT rowid, * FROM envelopes "
             "WHERE next_attempt_at <= ? AND status='{}' AND being_processed=0 "
-            "LIMIT 1".format(Status.QUEUED), (self.clock.time(),)
+            "AND (rowid % ?) = ? LIMIT 1".format(Status.QUEUED),
+            (self.clock.time(), self._shards, self._shard)
         )
         row = self._db_cursor.fetchone()
 
