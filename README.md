@@ -8,7 +8,7 @@ Prerequisites:
  - UNIX-like OS (tested on macOS 10.12.6)
  - Docker with `docker-compose` supporting
  [version 3](https://docs.docker.com/compose/compose-file/) configuration files
- - Python 3
+ - Python 3 (to run end-to-end tests)
  - Shell
 
 # How To Build
@@ -25,6 +25,8 @@ system.
 Once the image is built, you can run unit tests by running the image like this:
 
     $ docker run --rm -it mini-mailgun/bundle
+
+Unit tests should never fail.
 
 # How To Run End-To-End Test
 
@@ -53,7 +55,23 @@ To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containe
 
     $ docker-compose rm -fv
 
+Due to the asynchronous nature of the setup, end-to-end tests will sometimes fail. Unlike unit
+tests, where failures indicate issues in the code with certainty, failures of the end-to-end tests
+need interpretation: sometime it's just unfortunate timing. The end-to-end suite can be improved,
+but I decided not to invest time in it at this point.
+
 # HTTP API
+
+I'm assuming that the system will be deployed behind a load balancer which terminates HTTPS. Thus
+it exposes HTTP API and requests/responses might contain sensitive information.
+
+## Authentication
+
+Clients are authenticated by including a secret token (`client_id`) into requests. This token
+uniquely identifies client's data within the system.
+
+This has to be changed in the next version: clients should have stable permanent identifiers and
+revokable secrets for authentication.
 
 ## POST /send
 
@@ -126,11 +144,18 @@ another lists `c@c.com`; both reference the original message).
 Each envelope (along with the message formed from the incoming request) will be delivered to its
 own SMTP server. Delivery attempts are tracked per envelope.
 
+In the current version frontend uses plain text file `/conf/clients` as its authentication
+database. The file lists known client identifiers.
+
 ## Sender
 
 Here's a rough sketch of the `sender` process design:
 
 ![sender process](images/sender.jpg)
+
+## Cleaner
+
+Cleaner is a separate container which implements retention policy for client submissions statuses.
 
 ## Choices
 
