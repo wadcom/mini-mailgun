@@ -73,6 +73,12 @@ class TestEndToEnd(unittest.TestCase):
         self.client.sends_email(email)
         self.smtp_a.receives_email(email)
 
+    def test_permanent_failures_should_mark_email_undeliverable(self):
+        email = Email.causing_server_to_permanently_refuse_sender(recipients=['a@a.com'])
+        submission = self.client.sends_email(email)
+        time.sleep(SMTPSTUB_RETRY_INTERVAL)
+        self.client.observes_submission_status(submission, 'undeliverable')
+
 
 class Client:
     # TODO: take it from an environment variable
@@ -168,6 +174,11 @@ class Email:
     def __init__(self, recipients, sender=None):
         self._sender = sender or self._make_unique_address()
         self._recipients = recipients
+
+    @classmethod
+    def causing_server_to_permanently_refuse_sender(cls, recipients):
+        return cls(recipients=recipients,
+                   sender=cls._make_unique_address(prefix='refuse-sender-'))
 
     @classmethod
     def causing_server_to_stall(cls, recipients):
