@@ -1,7 +1,7 @@
 #! /usr/bin/env python3
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import call, MagicMock
 
 import mailqueue
 import sender
@@ -18,21 +18,22 @@ class TestDeliveryAgent(unittest.TestCase):
         self.mq.mark_as_undeliverable = MagicMock()
         self.mq.schedule_retry_in = MagicMock()
         self.dns_resolver = self.DNSResolverStub()
-        self.dns_resolver.get_first_mx = MagicMock(return_value='mail.example.com')
+        self.dns_resolver.get_mxs = MagicMock(return_value=['mail.example.com'])
         self.smtp_client = sender.SMTPClient()
         self.smtp_client.send = MagicMock()
 
         self.delivery_agent = sender.DeliveryAgent(self.mq, self.dns_resolver, self.smtp_client)
 
     def test_successful_delivery(self):
-        envelope = mailqueue.Envelope(destination_domain='example.com')
+        envelope = mailqueue.Envelope(destination_domain='example.com',
+                                      recipients=['x@example.com'])
 
         self.mq.get = MagicMock(return_value=envelope)
 
         self.assertDeliveryResultIs(sender.DeliveryAgent.DONE)
 
         self.mq.get.assert_called_once()
-        self.dns_resolver.get_first_mx.assert_called_once_with('example.com')
+        self.dns_resolver.get_mxs.assert_called_once_with('example.com')
         self.smtp_client.send.assert_called_once_with('mail.example.com', envelope)
         self.mq.mark_as_sent.assert_called_once()
 
@@ -64,6 +65,20 @@ class TestDeliveryAgent(unittest.TestCase):
         self.delivery_agent.deliver_single_envelope()
         self.mq.mark_as_undeliverable.assert_called_once_with(envelope)
 
+    def test_unavailable_first_mx_should_cause_delivery_attempt_to_next_one(self):
+        def fail_mx1(hostname, _envelope):
+            if hostname == 'mx1.a.com':
+                raise sender.TemporaryFailure('simulated failure on the first MX')
+
+        self.dns_resolver.get_mxs = MagicMock(return_value=['mx1.a.com', 'mx2.a.com'])
+        self.smtp_client.send = MagicMock(side_effect=fail_mx1)
+        envelope = self._envelope_to_be_processed()
+
+        self.delivery_agent.deliver_single_envelope()
+
+        self.smtp_client.send.assert_has_calls(
+            [call('mx1.a.com', envelope), call('mx2.a.com', envelope)])
+
     def assertDeliveryResultIs(self, expected):
         result = self.delivery_agent.deliver_single_envelope()
         self.assertEqual(expected, result)
@@ -81,10 +96,21 @@ class TestDeliveryAgent(unittest.TestCase):
     def _envelope_with_unresolvable_mx(self):
         envelope = self._envelope_to_be_processed()
         envelope.destination_domain = 'unresolvable.com'
-        self.dns_resolver.get_first_mx = MagicMock(
+        self.dns_resolver.get_mxs = MagicMock(
             side_effect=sender.TemporaryFailure("Can't resolve MX"))
         return envelope
 
+
+class TestStaticMXConfigParser(unittest.TestCase):
+    def test_sample(self):
+        self.assertEqual(
+            {
+                'a.com': ['mx1', 'mx2'],
+                'b.com': ['mx1'],
+                'c.com': ['mx2', 'mx3'],
+            },
+            sender.parse_static_mx_config('a.com:mx1,mx2;b.com:mx1;c.com:mx2,mx3')
+        )
 
 if __name__ == '__main__':
     unittest.main()

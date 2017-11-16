@@ -62,32 +62,47 @@ class DeliveryAgent:
         if not envelope:
             return self.IDLE
 
-        logging.info('Took envelope {} for delivery (domain={})'.format(
-            envelope.id, envelope.destination_domain))
+        logging.info('Took envelope {} for delivery (domain={}, recipients={})'.format(
+            envelope.id, envelope.destination_domain, envelope.recipients))
 
-        try:
-            # TODO: loop through MXs
-            mx = self._dns_resolver.get_first_mx(envelope.destination_domain)
-            logging.debug('Envelope {}: MX for {} is {}'.format(envelope.id,
-                                                                envelope.destination_domain,
-                                                                mx))
-            self._smtp_client.send(mx, envelope)
-        except TemporaryFailure as e:
-            self._handle_temporary_failure(e, envelope)
-
+        mxs = self._get_mxs(envelope)
+        if not mxs:
             return self.DONE
 
-        logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id, mx))
+        delivered_to = self._try_delivering_to_all_mxs(envelope, mxs)
+        self._handle_attempt_outcome(delivered_to, envelope)
 
-        self._mailqueue.mark_as_sent(envelope)
         return self.DONE
 
-    def _handle_temporary_failure(self, exception, envelope):
+    def _get_mxs(self, envelope):
+        try:
+            mxs = self._dns_resolver.get_mxs(envelope.destination_domain)
+            logging.debug('Envelope {}: MXs for {} are {}'.format(envelope.id,
+                                                                  envelope.destination_domain,
+                                                                  mxs))
+            return mxs
+        except TemporaryFailure as e:
+            logging.warning(
+                "Envelope {}: can't resolve MXs for {}: {}".format(envelope.id,
+                                                                   envelope.destination_domain,
+                                                                   e))
+            self._handle_temporary_failure(envelope)
+
+    def _handle_attempt_outcome(self, delivered_to, envelope):
+        if delivered_to:
+            logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id,
+                                                                            delivered_to))
+            self._mailqueue.mark_as_sent(envelope)
+        else:
+            self._handle_temporary_failure(envelope)
+
+    def _handle_temporary_failure(self, envelope):
         attempts_performed = envelope.delivery_attempts + 1
         if attempts_performed < self.max_delivery_attempts:
             logging.warning(
-                'Envelope {}: temporary failure ({}), '
-                'scheduling to retry in {} seconds'.format(envelope.id, exception,
+                'Envelope {}: temporary failures delivering to all MXs for {}, '
+                'scheduling to retry in {} seconds'.format(envelope.id,
+                                                           envelope.destination_domain,
                                                            self.retry_interval))
             self._mailqueue.schedule_retry_in(envelope, self.retry_interval)
         else:
@@ -95,6 +110,17 @@ class DeliveryAgent:
                 "Envelope {}: can't deliver after {} attempts, "
                 "marking as undeliverable".format(envelope.id, attempts_performed))
             self._mailqueue.mark_as_undeliverable(envelope)
+
+    def _try_delivering_to_all_mxs(self, envelope, mxs):
+        for mx in mxs:
+            try:
+                self._smtp_client.send(mx, envelope)
+                return mx
+            except TemporaryFailure as e:
+                logging.warning(
+                    'Envelope {}: temporary failure delivering to {}: {}'.format(envelope.id,
+                                                                                 mx,
+                                                                                 e))
 
 
 class SMTPClient:
@@ -108,12 +134,11 @@ class SMTPClient:
                                                                                   self._smtp_port))
         try:
             server = smtplib.SMTP(host=smtp_hostname, port=self._smtp_port)
-        except socket.gaierror:
-            import sys
-            # TODO: log it properly
-            sys.stderr.write('error resolving {}\n'.format(smtp_hostname))
-            # TODO: mark delivery failure
-            sys.exit(1)
+        except socket.gaierror as e:
+            raise TemporaryFailure("Can't resolve {}: {}".format(smtp_hostname, e)) from None
+        except (smtplib.SMTPException, OSError) as e:
+            raise TemporaryFailure('Error establishing SMTP connection to {}:{}: {}'.format(
+                smtp_hostname, self._smtp_port, e)) from None
 
         # TODO: use correct recipients
         try:
@@ -134,30 +159,36 @@ def get_dns_resolver():
     static_mx_config = os.environ.get('STATIC_MX_CONFIG')
     if static_mx_config:
         logging.info('Using static MX configuration: {}'.format(static_mx_config))
-        return DNSResolverStub({
-            k: v for k, v in [entry.split(':') for entry in static_mx_config.split(',')]
-        })
+        return DNSResolverStub(parse_static_mx_config(static_mx_config))
     else:
         return DNSResolver()
 
-class DNSResolverStub:
-    def __init__(self, domain_to_mx_dict):
-        self._mx = domain_to_mx_dict
+def parse_static_mx_config(s):
+    static_mx_config = {}
+    for domain_mxs in s.split(';'):
+        domain, mxs = domain_mxs.split(':')
+        static_mx_config[domain] = mxs.split(',')
 
-    def get_first_mx(self, domain):
+    return static_mx_config
+
+
+class DNSResolverStub:
+    def __init__(self, domain_to_mxs_dict):
+        self._mxs = domain_to_mxs_dict
+
+    def get_mxs(self, domain):
         try:
-            return self._mx[domain]
+            return self._mxs[domain]
         except KeyError:
             raise TemporaryFailure("Can't resolve MX for '{}': unknown hostname".format(domain)) \
                 from None
 
 
 class DNSResolver:
-    def get_first_mx(self, domain):
+    def get_mxs(self, domain):
         mx_records = sorted((r.preference, r.exchange.to_text(omit_final_dot=True))
                             for r in dns.resolver.query(domain, 'MX'))
-        # TODO: handle no MX records
-        return mx_records[0][1]
+        return [mx for _preference, mx in mx_records]
 
 
 def get_sharding_configuration():
