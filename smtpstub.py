@@ -14,11 +14,14 @@ class SMTPHandler:
         self._simulate_failure_for = {}
 
     async def handle_MAIL(self, server, session, envelope, sender, *args):
-        if sender.startswith('tempfail-once-'):
-            if sender not in self._simulate_failure_for:
-                self._simulate_failure_for[sender] = True
+        if sender.startswith('refuse-sender-'):
+            return '553 Permanently refusing, as directed by special sender address {}'.format(
+                sender)
         elif sender.startswith('stall-'):
             await asyncio.sleep(15)
+        elif sender.startswith('tempfail-once-'):
+            if sender not in self._simulate_failure_for:
+                self._simulate_failure_for[sender] = True
 
         envelope.mail_from = sender
         return '250 ok'
