@@ -46,8 +46,6 @@ class TestSendHandler(unittest.TestCase):
         e2 = self._run_handler_and_get_result_envelope(self.valid_request_dict)
         self.assertNotEqual(e1.submission_id, e2.submission_id)
 
-    # TODO: test for invalid values of recipients
-
     def test_single_recipient_domain_should_become_destination_domain(self):
         e = self._run_handler_and_get_result_envelope(
             self._valid_request_with_field('recipients', ['someone@recipient.com']))
@@ -130,8 +128,6 @@ class TestSendHandler(unittest.TestCase):
 
 
 class TestStatusHandler(unittest.TestCase):
-    # TODO: test for missing and invalid parameters in request_dict
-
     def setUp(self):
         self.mq = mailqueue.MailQueue(fresh=True)
         self.handler = frontend.StatusHandler(self.mq)
