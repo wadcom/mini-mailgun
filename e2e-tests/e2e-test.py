@@ -49,13 +49,9 @@ class TestEndToEnd(unittest.TestCase):
         self.client.observes_submission_status(submission, 'sent')
 
     def test_delivery_attempts_should_be_limited(self):
-        email = Email(recipients=['undeliverable@aaa.com'])
+        email = Email(recipients=['undeliverable@undeliverable.com'])
         submission = self.client.sends_email(email)
-        attempts_before_first_check = (MAX_DELIVERY_ATTEMPTS - 2)
-        time.sleep(attempts_before_first_check * SMTPSTUB_RETRY_INTERVAL)
-        self.client.observes_submission_status(submission, 'queued')
-        attempts_before_second_check = (MAX_DELIVERY_ATTEMPTS + 1 - attempts_before_first_check)
-        time.sleep(attempts_before_second_check * SMTPSTUB_RETRY_INTERVAL)
+        time.sleep((MAX_DELIVERY_ATTEMPTS + 1) * SMTPSTUB_RETRY_INTERVAL)
         self.client.observes_submission_status(submission, 'undeliverable')
 
     def test_concurrent_delivery(self):
@@ -71,6 +67,11 @@ class TestEndToEnd(unittest.TestCase):
     def test_client_cannot_access_another_clients_submissions(self):
         submission = self.client.sends_email(Email(recipients=['a@a.com']))
         Client('another_client').doesnt_observe_submission_status(submission)
+
+    def test_looping_through_mxs(self):
+        email = Email(recipients=['x@ab.com'])
+        self.client.sends_email(email)
+        self.smtp_a.receives_email(email)
 
 
 class Client:
