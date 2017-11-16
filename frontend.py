@@ -64,8 +64,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         try:
             content_length = int(self.headers['Content-Length'])
-        except ValueError:
-            raise ValueError('Invalid content length')
+        except (TypeError, ValueError):
+            raise ValueError('Invalid or missing content length') from None
 
         return json.loads(self.rfile.read(content_length).decode())
 
