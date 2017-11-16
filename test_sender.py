@@ -25,10 +25,8 @@ class TestDeliveryAgent(unittest.TestCase):
         self.delivery_agent = sender.DeliveryAgent(self.mq, self.dns_resolver, self.smtp_client)
 
     def test_successful_delivery(self):
-        envelope = mailqueue.Envelope(destination_domain='example.com',
-                                      recipients=['x@example.com'])
-
-        self.mq.get = MagicMock(return_value=envelope)
+        envelope = self._envelope_to_be_processed()
+        envelope.destination_domain='example.com'
 
         self.assertDeliveryResultIs(sender.DeliveryAgent.DONE)
 
@@ -78,6 +76,20 @@ class TestDeliveryAgent(unittest.TestCase):
 
         self.smtp_client.send.assert_has_calls(
             [call('mx1.a.com', envelope), call('mx2.a.com', envelope)])
+
+    def test_multiple_mxs_should_not_cause_multiple_deliveries(self):
+        self.dns_resolver.get_mxs = MagicMock(return_value=['mx1.a.com', 'mx2.a.com'])
+        self._envelope_to_be_processed()
+        self.delivery_agent.deliver_single_envelope()
+        self.smtp_client.send.assert_called_once()
+
+    def test_permanent_failure_should_mark_email_undeliverable(self):
+        envelope = self._envelope_to_be_processed()
+        self.smtp_client.send = MagicMock(
+            side_effect=sender.PermanentFailure('Error during SMTP session'))
+        self.delivery_agent.deliver_single_envelope()
+        self.mq.mark_as_undeliverable.assert_called_once_with(envelope)
+        self.mq.schedule_retry_in.assert_not_called()
 
     def assertDeliveryResultIs(self, expected):
         result = self.delivery_agent.deliver_single_envelope()

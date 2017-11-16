@@ -69,8 +69,7 @@ class DeliveryAgent:
         if not mxs:
             return self.DONE
 
-        delivered_to = self._try_delivering_to_all_mxs(envelope, mxs)
-        self._handle_attempt_outcome(delivered_to, envelope)
+        self._try_delivering_to_all_mxs(envelope, mxs)
 
         return self.DONE
 
@@ -88,13 +87,25 @@ class DeliveryAgent:
                                                                    e))
             self._handle_temporary_failure(envelope)
 
-    def _handle_attempt_outcome(self, delivered_to, envelope):
-        if delivered_to:
-            logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id,
-                                                                            delivered_to))
-            self._mailqueue.mark_as_sent(envelope)
-        else:
-            self._handle_temporary_failure(envelope)
+    def _try_delivering_to_all_mxs(self, envelope, mxs):
+        for mx in mxs:
+            try:
+                self._smtp_client.send(mx, envelope)
+                logging.info('Envelope {}: successfully delivered to {}'.format(envelope.id, mx))
+                self._mailqueue.mark_as_sent(envelope)
+                return
+            except PermanentFailure as e:
+                logging.warning(
+                    'Envelope {}: permanent failure from {} ({}), marking as '
+                    'undeliverable'.format(envelope.id, mx, e))
+                self._mailqueue.mark_as_undeliverable(envelope)
+                return
+            except TemporaryFailure as e:
+                logging.warning(
+                    'Envelope {}: temporary failure delivering to {}: {}'.format(envelope.id,
+                                                                                 mx,
+                                                                                 e))
+        self._handle_temporary_failure(envelope)
 
     def _handle_temporary_failure(self, envelope):
         attempts_performed = envelope.delivery_attempts + 1
@@ -110,17 +121,6 @@ class DeliveryAgent:
                 "Envelope {}: can't deliver after {} attempts, "
                 "marking as undeliverable".format(envelope.id, attempts_performed))
             self._mailqueue.mark_as_undeliverable(envelope)
-
-    def _try_delivering_to_all_mxs(self, envelope, mxs):
-        for mx in mxs:
-            try:
-                self._smtp_client.send(mx, envelope)
-                return mx
-            except TemporaryFailure as e:
-                logging.warning(
-                    'Envelope {}: temporary failure delivering to {}: {}'.format(envelope.id,
-                                                                                 mx,
-                                                                                 e))
 
 
 class SMTPClient:
@@ -142,11 +142,26 @@ class SMTPClient:
 
         try:
             server.send_message(envelope.message, to_addrs=envelope.recipients)
+        except smtplib.SMTPResponseException as e:
+            self._handle_smtp_exception(e)
         except smtplib.SMTPException as e:
             raise TemporaryFailure('{} {}'.format(e.args[0], e.args[1].decode())) from None
         finally:
             server.quit()
 
+    def _handle_smtp_exception(self, exception):
+        if 400 <= exception.smtp_code <= 499:
+            raise TemporaryFailure('{} {}'.format(exception.smtp_code,
+                                                  exception.smtp_error)) from None
+        elif 500 <= exception.smtp_code <= 599:
+            raise PermanentFailure('{} {}'.format(exception.smtp_code,
+                                                  exception.smtp_error)) from None
+        else:
+            raise ValueError('unexpected SMTP code: {}'.format(exception.smtp_code))
+
+
+class PermanentFailure(Exception):
+    """Permanent failure, delivery won't ever succeed"""
 
 
 class TemporaryFailure(Exception):
