@@ -110,6 +110,10 @@ class TestSendHandler(unittest.TestCase):
             self._valid_request_with_field('client_id', 'my-client'))
         self.assertEqual('my-client', e.client_id)
 
+    def test_empty_recipient_list_should_raise_exception(self):
+        with self.assertRaises(ValueError):
+            self.handler.run(self._valid_request_with_field('recipients', []))
+
     @staticmethod
     def _last_call_first_arg(mock):
         """Convenience method to return the first argument of the last call to the mock."""

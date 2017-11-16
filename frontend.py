@@ -113,6 +113,9 @@ class SendHandler:
         except KeyError as e:
             raise ValueError('Missing request field "{}"'.format(e))
 
+        if not request_dict['recipients']:
+            raise ValueError('Empty recipient list')
+
         return message
 
 
