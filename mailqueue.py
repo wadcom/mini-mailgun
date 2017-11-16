@@ -1,0 +1,218 @@
+import email
+import inspect
+import os
+import queue
+import sqlite3
+import threading
+import time
+
+
+class Status:
+    QUEUED = 'queued'
+    SENT = 'sent'
+    UNDELIVERABLE = 'undeliverable'
+
+
+class Envelope:
+    def __init__(self, **kwargs):
+        self.id = None
+        self.__dict__.update(kwargs)
+
+    def __str__(self):
+        return 'Envelope({})'.format(
+            ', '.join([k + '=' + repr(v) for k, v in sorted(self.__dict__.items())]))
+
+
+class MailQueue:
+
+    DB_FILE = '/mailq/messages.db'
+
+    def __init__(self, fresh=False, shards=1, shard=0):
+        if fresh:
+            try:
+                os.remove(self.DB_FILE)
+            except FileNotFoundError:
+                pass
+
+        self.clock = time
+
+        assert shards >= 1, "invalid total number of shards ({})".format(shards)
+        assert shard < shards, \
+            "invalid shard id {} (should be between 0 and {} inclusive)".format(shard, shards-1)
+        self._shards = shards
+        self._shard = shard
+
+        self._db_conn = sqlite3.connect(self.DB_FILE)
+        self._db_conn.row_factory = sqlite3.Row
+        self._db_cursor = self._db_conn.cursor()
+
+        self._initialize_database()
+
+    def get(self):
+        row = self._select_row_for_processing()
+        return self._convert_row_to_envelope(row) if row else None
+
+    def get_status(self, client_id, submission_id):
+        self._db_cursor.execute(
+            "SELECT rowid, * FROM envelopes WHERE submission_id=? AND client_id=?",
+            (submission_id, client_id)
+        )
+
+        rows = self._db_cursor.fetchall()
+        if not rows:
+            return None
+
+        return [(r['rowid'], r['status']) for r in rows]
+
+    def mark_as_sent(self, envelope):
+        self._set_envelope_status(envelope, Status.SENT)
+
+    def mark_as_undeliverable(self, envelope):
+        self._set_envelope_status(envelope, Status.UNDELIVERABLE)
+
+    def put(self, envelope):
+        fields = {
+            'client_id': envelope.client_id,
+            'destination_domain': envelope.destination_domain,
+            'message': str(envelope.message),
+            'next_attempt_at': self.clock.time(),
+            'recipients': ','.join(envelope.recipients),
+            'submission_id': envelope.submission_id,
+            'status': envelope.status
+        }
+
+        statement = 'INSERT INTO envelopes ({}) VALUES ({})'.format(', '.join(fields.keys()),
+                                                                    ', '.join('?' * len(fields)))
+
+        self._execute_committing(statement, tuple(fields[k] for k in fields.keys()))
+
+        return self._db_cursor.lastrowid
+
+    def remove_inactive_envelopes(self, cutoff):
+        self._execute_committing(
+            'DELETE FROM envelopes WHERE status<>"{}" AND next_attempt_at < ?'.format(
+                Status.QUEUED),
+            (self.clock.time() - cutoff,)
+        )
+
+        return self._db_cursor.rowcount
+
+    def schedule_retry_in(self, envelope, retry_after):
+        self._assert_envelope_has_id(envelope)
+        self._execute_committing(
+            "UPDATE envelopes SET next_attempt_at=?, delivery_attempts=?, being_processed=0 "
+            "WHERE rowid=?",
+            (self.clock.time() + retry_after, envelope.delivery_attempts + 1, envelope.id)
+        )
+
+    @staticmethod
+    def _assert_envelope_has_id(envelope):
+        assert envelope.id, '{}: invalid envelope id "{}"'.format(envelope, envelope.id)
+
+    @staticmethod
+    def _convert_row_to_envelope(row):
+        # TODO: test parsing recipients
+        as_is = lambda x: x
+        column_transformations = {
+            'client_id': as_is,
+            'delivery_attempts': int,
+            'destination_domain': as_is,
+            'message': email.message_from_string,
+            'next_attempt_at': int,
+            'recipients': lambda x: x.split(','),
+            'status': as_is,
+            'submission_id': as_is
+        }
+        return Envelope(id=row['rowid'],
+                        **{k: f(row[k]) for k, f in column_transformations.items()})
+
+    def _execute_committing(self, statement, *extra_args):
+        self._db_cursor.execute(statement, *extra_args)
+        self._db_conn.commit()
+
+    def _initialize_database(self):
+        status_column = "status TEXT CHECK({}) NOT NULL, ".format(' or '.join(
+            'status="{}"'.format(v) for k, v in Status.__dict__.items() if not k.startswith('_'))
+        )
+        self._execute_committing(
+            "CREATE TABLE IF NOT EXISTS envelopes ("
+            "recipients TEXT NOT NULL, "
+            "destination_domain TEXT NOT NULL, "
+            "message TEXT NOT NULL, "
+            "next_attempt_at INTEGER NOT NULL, "
+            + status_column +
+            "submission_id TEXT NOT NULL, "
+            "delivery_attempts INTEGER NOT NULL DEFAULT 0, "
+            "being_processed BOOLEAN NOT NULL DEFAULT 0, "
+            "client_id TEXT NOT NULL"
+            ")"
+        )
+
+    def _select_row_for_processing(self):
+        self._db_cursor.execute(
+            "SELECT rowid, * FROM envelopes "
+            "WHERE next_attempt_at <= ? AND status='{}' AND being_processed=0 "
+            "AND (rowid % ?) = ? LIMIT 1".format(Status.QUEUED),
+            (self.clock.time(), self._shards, self._shard)
+        )
+        row = self._db_cursor.fetchone()
+
+        if row:
+            self._execute_committing("UPDATE envelopes SET being_processed=1 WHERE rowid=?",
+                                     (row['rowid'],))
+        return row
+
+    def _set_envelope_status(self, envelope, status):
+        self._assert_envelope_has_id(envelope)
+        self._execute_committing(
+            'UPDATE envelopes SET status="{}" WHERE rowid=?'.format(status), (envelope.id, ))
+
+
+# TODO: rename it to SynchronizedMailQueue
+class Manager:
+    """A proxy synchronizing access to MailQueue from multiple threads.
+
+    SQLite requires that the thread creating the database object is
+    the only one using it. This manager synchronizes access to methods
+    of MailQueue via blocking queues.
+    """
+
+    def __init__(self, **kwargs):
+        self._mail_queue_args = kwargs
+        self._manager_thread = threading.Thread(target=self._main_loop)
+        self._requests = queue.Queue(1)
+        self._responses = queue.Queue(1)
+
+    def get(self):
+        return self._proxy_method(('get', []))
+
+    def get_status(self, client_id, submission_id):
+        return self._proxy_method(('get_status', [client_id, submission_id]))
+
+    def mark_as_sent(self, envelope):
+        return self._proxy_method(('mark_as_sent', [envelope]))
+
+    def mark_as_undeliverable(self, envelope):
+        return self._proxy_method(('mark_as_undeliverable', [envelope]))
+
+    def put(self, envelope):
+        return self._proxy_method(('put', [envelope]))
+
+    def remove_inactive_envelopes(self, cutoff):
+        return self._proxy_method(('remove_inactive_envelopes', [cutoff]))
+
+    def schedule_retry_in(self, envelope, retry_after):
+        return self._proxy_method(('schedule_retry_in', [envelope, retry_after]))
+
+    def start(self):
+        self._manager_thread.start()
+
+    def _main_loop(self):
+        mq = MailQueue(**self._mail_queue_args)
+        while True:
+            method, args = self._requests.get()
+            self._responses.put(getattr(mq, method)(*args))
+
+    def _proxy_method(self, params):
+        self._requests.put(params)
+        return self._responses.get()

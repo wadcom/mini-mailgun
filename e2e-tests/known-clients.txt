@@ -1,0 +1,2 @@
+authenticated_client
+another_client
