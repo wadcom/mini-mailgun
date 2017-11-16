@@ -26,7 +26,8 @@ class SMTPHandler:
     async def handle_DATA(self, server, session, envelope):
         if self._simulate_failure_for.get(envelope.mail_from, False):
             self._simulate_failure_for[envelope.mail_from] = False
-            return '451 Aborted as directed by the special sender address; try again later'
+            return '451 Aborted as directed by the special sender address ({}); ' \
+                   'try again later'.format(envelope.mail_from)
 
         self._log_queue.put(envelope)
         return '250 Ok, accepted'
