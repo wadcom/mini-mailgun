@@ -183,15 +183,7 @@ class Manager:
         self._requests = queue.Queue(1)
         self._responses = queue.Queue(1)
 
-        # XXX: factor out
-        methods = [name for name, _ in inspect.getmembers(MailQueue, inspect.isfunction)
-                   if not name.startswith('_')]
-
-        for method in methods:
-            assert method not in self.__class__.__dict__, \
-                "name clash: method '{}' already exists in {}".format(method,
-                                                                      self.__class__.__name__)
-            self.__dict__[method] = self.ProxiedMethod(method, self._requests, self._responses)
+        self._setup_proxy_methods_for(MailQueue)
 
     def start(self):
         self._manager_thread.start()
@@ -201,6 +193,15 @@ class Manager:
         while True:
             method, args = self._requests.get()
             self._responses.put(getattr(mq, method)(*args))
+
+    def _setup_proxy_methods_for(self, cls):
+        methods = [name for name, _ in inspect.getmembers(cls, inspect.isfunction)
+                   if not name.startswith('_')]
+        for method in methods:
+            assert method not in self.__class__.__dict__, \
+                "name clash: method '{}' already exists in {}".format(method,
+                                                                      self.__class__.__name__)
+            self.__dict__[method] = self.ProxiedMethod(method, self._requests, self._responses)
 
     class ProxiedMethod:
         def __init__(self, method_name, request_queue, response_queue):
