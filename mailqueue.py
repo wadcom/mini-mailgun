@@ -183,7 +183,26 @@ class Manager:
         self._requests = queue.Queue(1)
         self._responses = queue.Queue(1)
 
-        self._setup_proxy_methods_for(MailQueue)
+    def get(self):
+        return self._proxy_method(('get', []))
+
+    def get_status(self, client_id, submission_id):
+        return self._proxy_method(('get_status', [client_id, submission_id]))
+
+    def mark_as_sent(self, envelope):
+        return self._proxy_method(('mark_as_sent', [envelope]))
+
+    def mark_as_undeliverable(self, envelope):
+        return self._proxy_method(('mark_as_undeliverable', [envelope]))
+
+    def put(self, envelope):
+        return self._proxy_method(('put', [envelope]))
+
+    def remove_inactive_envelopes(self, cutoff):
+        return self._proxy_method(('remove_inactive_envelopes', [cutoff]))
+
+    def schedule_retry_in(self, envelope, retry_after):
+        return self._proxy_method(('schedule_retry_in', [envelope, retry_after]))
 
     def start(self):
         self._manager_thread.start()
@@ -194,21 +213,6 @@ class Manager:
             method, args = self._requests.get()
             self._responses.put(getattr(mq, method)(*args))
 
-    def _setup_proxy_methods_for(self, cls):
-        methods = [name for name, _ in inspect.getmembers(cls, inspect.isfunction)
-                   if not name.startswith('_')]
-        for method in methods:
-            assert method not in self.__class__.__dict__, \
-                "name clash: method '{}' already exists in {}".format(method,
-                                                                      self.__class__.__name__)
-            self.__dict__[method] = self.ProxiedMethod(method, self._requests, self._responses)
-
-    class ProxiedMethod:
-        def __init__(self, method_name, request_queue, response_queue):
-            self._method_name = method_name
-            self._request_queue = request_queue
-            self._response_queue = response_queue
-
-        def __call__(self, *args, **kwargs):
-            self._request_queue.put((self._method_name, args))
-            return self._response_queue.get()
+    def _proxy_method(self, params):
+        self._requests.put(params)
+        return self._responses.get()
