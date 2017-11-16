@@ -140,12 +140,12 @@ class SMTPClient:
             raise TemporaryFailure('Error establishing SMTP connection to {}:{}: {}'.format(
                 smtp_hostname, self._smtp_port, e)) from None
 
-        # TODO: use correct recipients
         try:
-            server.send_message(envelope.message)
-            server.quit()
+            server.send_message(envelope.message, to_addrs=envelope.recipients)
         except smtplib.SMTPException as e:
             raise TemporaryFailure('{} {}'.format(e.args[0], e.args[1].decode())) from None
+        finally:
+            server.quit()
 
 
 
