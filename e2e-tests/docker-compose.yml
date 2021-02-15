@@ -1,5 +1,14 @@
 version: '3'
 services:
+  cleaner:
+    image: mini-mailgun/bundle
+    entrypoint: ./cleaner.py
+    environment:
+      CLEANUP_INTERVAL: 10
+      RETENTION_PERIOD: 30
+    volumes:
+      - '.:/mailq'
+
   frontend:
     image: mini-mailgun/bundle
     entrypoint: ./frontend.py
@@ -7,17 +16,42 @@ services:
       - "5080:5000"
     volumes:
       - '.:/mailq'
+      - './known-clients.txt:/conf/clients'
 
-  sender:
+  sender-1:
     image: mini-mailgun/bundle
     entrypoint: ./sender.py
+    environment:
+      RETRY_INTERVAL: 3
+      SHARD: 1/2
+      SMTP_PORT: 5000
+      STATIC_MX_CONFIG: a.com:smtp-a;b.com:smtp-b;ab.com:localhost,smtp-a
     volumes:
       - '.:/mailq'
 
-  smtpstub:
+  sender-2:
+    image: mini-mailgun/bundle
+    entrypoint: ./sender.py
+    environment:
+      RETRY_INTERVAL: 3
+      SHARD: 2/2
+      SMTP_PORT: 5000
+      STATIC_MX_CONFIG: a.com:smtp-a;b.com:smtp-b;ab.com:localhost,smtp-a
+    volumes:
+      - '.:/mailq'
+
+  smtp-a:
     image: mini-mailgun/bundle
     entrypoint: ./smtpstub.py
-    ports:
-      - "5025:5000"
+    environment:
+      DOMAIN: a.com
+    volumes:
+      - '.:/logs'
+
+  smtp-b:
+    image: mini-mailgun/bundle
+    entrypoint: ./smtpstub.py
+    environment:
+      DOMAIN: b.com
     volumes:
       - '.:/logs'

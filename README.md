@@ -1,14 +1,14 @@
 # Mini-MailGun
 
 This simple service accepts requests to send email (as JSON-formatted HTTP POST requests) and
-relays them to an upstream SMTP server.
+relays them to appropriate mail exchanges (MXs) with SMTP.
 
 Prerequisites:
 
  - UNIX-like OS (tested on macOS 10.12.6)
  - Docker with `docker-compose` supporting
  [version 3](https://docs.docker.com/compose/compose-file/) configuration files
- - curl
+ - Python 3 (to run end-to-end tests)
  - Shell
 
 # How To Build
@@ -25,6 +25,8 @@ system.
 Once the image is built, you can run unit tests by running the image like this:
 
     $ docker run --rm -it mini-mailgun/bundle
+
+Unit tests should never fail.
 
 # How To Run End-To-End Test
 
@@ -47,82 +49,134 @@ Start up the system in the test harness:
 Once it's up and running (you should see a message similar to "`Attaching to e2etests_smtpstub_1,
 e2etests_sender_1, e2etests_frontend_1`"), run the test in another terminal window:
 
-    $ ./test.sh
-
-Exit code of this script indicates whether the test was successful.
+    $ ./e2e-test.py
 
 To stop the system, abort `docker-compose` with `Ctrl-C` and remove the containers:
 
     $ docker-compose rm -fv
 
+Due to the asynchronous nature of the setup, end-to-end tests will sometimes fail. Unlike unit
+tests, where failures indicate issues in the code with certainty, failures of the end-to-end tests
+need interpretation: sometime it's just unfortunate timing. The end-to-end suite can be improved,
+but I decided not to invest time in it at this point.
+
 # HTTP API
 
-The service expects an HTTP POST request at the `/send` endpoint. The body of the POST request
-should be a JSON object of the following structure:
+I'm assuming that the system will be deployed behind a load balancer which terminates HTTPS. Thus
+it exposes HTTP API and requests/responses might contain sensitive information.
+
+## Authentication
+
+Clients are authenticated by including a secret token (`client_id`) into requests. This token
+uniquely identifies client's data within the system.
+
+This has to be changed in the next version: clients should have stable permanent identifiers and
+revokable secrets for authentication.
+
+## POST /send
+
+The body of the request should be a JSON object of the following structure:
 
     {
         "sender": "me@example.com",
-        "recipients": "alice@another.com, bob@third.com",
+        "recipients": ["alice@another.com", "bob@third.com"],
         "subject": "important message",
         "body": "hello!"
     }
 
-The system responds with a `200` status code if the message has been queued successfully.
+The system responds with a `200` status code if the message has been queued successfully. The
+response is structured like this:
+
+    {
+        "result": "queued",
+        "submission_id": "d0c539ee71a649528ed59c1a0e419afa"
+    }
+
+The `submission_id` is a unique identifier which can be used later to query the status of the
+submission.
+
+## POST /status
+
+The body of the request should be a JSON object of the following structure:
+
+    {
+        "submission_id": "d0c539ee71a649528ed59c1a0e419afa"
+    }
+
+The response is a JSON object like this:
+
+    {
+        "result": "success",
+        "status": "sent"
+    }
+
+`status` may be one of:
+ * `queued`: there is at least one recipient for whom the message has not yet been relayed to the
+ mail exchange
+ * `sent`: the message has been relayed to all recipients (it doesn't mean it has been delivered
+ though)
+
+In case of error the response is of the following format:
+
+    {
+        "result": "error",
+        "message": "Human-readable diagnostic message"
+    }
 
 # System Design
 
-Here's the overall system structure:
+Here's the high level system structure:
 
 ![system structure](images/system-structure.jpg)
 
-## Assumptions
+## Frontend
 
-In the real world a pool of SMTP servers would take care of queuing email, making decisions on next
-hop for delivery (e.g. by looking up an MX record or picking a preconfigured upstream SMTP server),
-attempting deliveries, bouncing undeliverable email and retrying deliveries after temporary
-failures.
+The job of the frontend is to authenticate client requests, parse and validate input, represent
+incoming requests as internal entities and store them in the mail queue.
 
-There is no value in reimplementing this functionality when production-grade solutions exist.
-Therefore I assume that the point of the system being designed is to:
- * provide clients with an HTTP interface for sending email
- * persistently queue client requests for cases when backend SMTP server pool is not available
- * allow for scaling of HTTP frontends
- * allow for performance gains when delivering to backends (e.g. reuse TCP connections, parallel
- delivery etc)
+![frontend operations](images/frontend.jpg)
+
+A single incoming request can include recipients of different domains (e.g. `b1@b.com`, `b2@b.com`
+and `c@c.com`) so the frontend groups them into envelopes. An envelope lists all recipients of the
+incoming request that belong to the same domain (e.g. one envelope lists `b1@b.com`, `b2@b.com`,
+another lists `c@c.com`; both reference the original message).
+
+Each envelope (along with the message formed from the incoming request) will be delivered to its
+own SMTP server. Delivery attempts are tracked per envelope.
+
+In the current version frontend uses plain text file `/conf/clients` as its authentication
+database. The file lists known client identifiers.
+
+## Sender
+
+Here's a rough sketch of the `sender` process design:
+
+![sender process](images/sender.jpg)
+
+## Cleaner
+
+Cleaner is a separate container which implements retention policy for client submissions statuses.
 
 ## Choices
 
 I chose to use SQLite3 to store mail queue between the `frontend` and `sender`. It's embedded
 (requires no additional components) and provides transactional properties when persisting messages.
-It's also battle-tested for crash scenarios. It provides rich semantics that can be used later
-(e.g. sort by timestamp, select only messages for particular shard etc).
+It's also battle-tested for crash scenarios and provides rich query/update semantics.
 
-Messages are persisted as RFC822 text and are uniquely identified by SQLite's `rowid`.
+Each envelope contains the original message text as RFC822. I traded space (database size) for
+simplicity (having to deal with a single table).
 
 ## Scaling
 
 To scale frontends of this architecture, one can just run multiple `frontend` containers sharing
 the same database volume. SQLite3 will serialize writes.
 
-To scale the number of senders, we'll need to implement sharding logic in those components.
+It is possible to run multiple senders in a sharded configuration (unique envelope id acts as the
+sharding key).
 
 This will work until database contention becomes too high. At that point the next step might be to
-shard on writes (e.g. use multiple databases).
+shard on writes (e.g. use multiple databases with customer id as sharding key).
 
-Another avenue for improvement is to increase concurrency in the senders (e.g. run multiple
-threads) or to batch multiple messages over the same SMTP connection.
-
-# Limitations And Possible Improvements
-
-This version of the system is primitive and can be improved in a number of ways. Here are some:
-
- - Properly validate input and provide useful diagnostics
- - Support a pool of backend SMTP servers
- - Provide the client with an API to query the status of the previously sent email
- - Add logging
- - Handle scenarios where the backend SMTP server fails (retries with exponential backoff)
- - Handle scenarios where a particular email can't be delivered temporarily (schedule another
- delivery attempt later) or permanently (mark the message as undeliverable)
- - Provide structured error responses for HTTP requests (use JSON instead of HTML)
- - Correctly handle multiple recipients in requests
- - Handle MIME-encoded messages (not just plain text)
+Another avenue for improvement is to batch multiple messages over the same SMTP connection, to
+keep per-MX availability status (e.g. avoid delivery to an MX which is known to be unavailable),
+cache DNS lookups and use other smart strategies.
